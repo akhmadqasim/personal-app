@@ -1,6 +1,4 @@
 //! SQL text for the sync engine. Pure functions so they are unit-tested natively.
-// Consumed by the sync handler from Task 7 onwards.
-#![allow(dead_code)]
 
 use serde_json::Value;
 
@@ -68,6 +66,8 @@ pub fn pull_sql(table: &SyncTable) -> String {
 }
 
 /// All active rows, for exports.
+// Consumed by the export handler (Task 9).
+#[allow(dead_code)]
 pub fn export_sql(table: &SyncTable) -> String {
     format!(
         "SELECT {cols} FROM {t} WHERE deleted_at IS NULL ORDER BY seq",

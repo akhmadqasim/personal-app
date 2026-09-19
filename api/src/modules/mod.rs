@@ -1,6 +1,4 @@
 //! Module registry. Adding a module = add its tables and routes here.
-// Consumed by the sync handler from Task 7 onwards.
-#![allow(dead_code)]
 
 pub mod gym;
 

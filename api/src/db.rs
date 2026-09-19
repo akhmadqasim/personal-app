@@ -1,6 +1,4 @@
 //! Thin D1 helpers: bind `serde_json` values and read rows back as JSON maps.
-// Consumed by the sync handler from Task 7 onwards.
-#![allow(dead_code)]
 
 use serde_json::{Map, Value};
 use wasm_bindgen::JsValue;

@@ -1,7 +1,5 @@
 //! Domain rules for gym rows. Types and required columns are already checked
 //! by `SyncTable::check`, so these functions may trust the JSON types.
-// Consumed by the sync handler from Task 7 onwards.
-#![allow(dead_code)]
 
 use serde_json::Value;
 

@@ -1,11 +1,5 @@
 //! API error type and its JSON representation.
 
-// `error` is a private module (see `lib.rs`), so nothing here is part of the crate's
-// public surface yet: `auth` and `router` start consuming it in Task 4, and
-// `FieldError`/`ApiError::Validation` stay unconstructed outside the unit tests below
-// until the push-validation work in a later task. Remove once everything is wired up.
-#![allow(dead_code)]
-
 use serde::Serialize;
 use serde_json::{Value, json};
 use worker::{Response, console_error};
@@ -35,6 +29,8 @@ pub enum ApiError {
     /// 413
     PayloadTooLarge(String),
     /// 415
+    // Constructed by the image upload handler (Task 10).
+    #[allow(dead_code)]
     UnsupportedMediaType(String),
     /// 422
     Validation(Vec<FieldError>),

@@ -1,7 +1,5 @@
 //! Describes one table the sync engine replicates. Modules declare these; the
 //! engine only knows column names and kinds.
-// Consumed by the sync handler from Task 7 onwards.
-#![allow(dead_code)]
 
 use serde_json::Value;
 

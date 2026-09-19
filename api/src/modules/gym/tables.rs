@@ -1,6 +1,4 @@
 //! Gym tables in foreign-key order. Column order here is the bind order.
-// Consumed by the sync handler from Task 7 onwards.
-#![allow(dead_code)]
 
 use crate::sync::table::{Column, SyncTable};
 

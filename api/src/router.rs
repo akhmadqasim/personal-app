@@ -15,9 +15,13 @@ pub async fn handle(req: Request, env: Env) -> Result<Response> {
     {
         return err.into_response();
     }
-    let router = Router::new().get("/api/health", |_, _| {
-        Response::from_json(&json!({ "ok": true }))
-    });
+    let router = Router::new()
+        .get("/api/health", |_, _| {
+            Response::from_json(&json!({ "ok": true }))
+        })
+        .post_async("/api/sync", |req, ctx| async move {
+            respond(crate::sync::handler::handle(req, &ctx.env).await)
+        });
     crate::modules::routes(router)
         .or_else_any_method_async("/*path", |_, _| async {
             ApiError::NotFound.into_response()
@@ -27,8 +31,6 @@ pub async fn handle(req: Request, env: Env) -> Result<Response> {
 }
 
 /// Converts a handler result into the Worker's result type.
-// Used by handlers from Task 7 onwards.
-#[allow(dead_code)]
 pub fn respond(result: ApiResult<Response>) -> Result<Response> {
     result.or_else(ApiError::into_response)
 }
