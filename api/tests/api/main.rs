@@ -5,6 +5,7 @@
 mod auth;
 mod client;
 mod fixtures;
+mod gym;
 mod health;
 mod server;
 mod sync;
@@ -22,6 +23,10 @@ fn main() {
     let mut trials = Vec::new();
     health::register(&mut trials, &ctx);
     auth::register(&mut trials, &ctx);
+    // Registered before `sync` so the catalog tests' plain (non-paginating) `sync()`
+    // calls see the pull's first page before `sync::paginates_with_has_more` pushes
+    // 501 rows and pushes every other table's rows past the 500-row pull page.
+    gym::register(&mut trials, &ctx);
     sync::register(&mut trials, &ctx);
 
     let conclusion = libtest_mimic::run(&args, trials);
