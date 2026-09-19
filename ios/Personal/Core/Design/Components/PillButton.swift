@@ -53,7 +53,7 @@ struct PillButton: View {
             .padding(.horizontal, Theme.Spacing.xl)
             .frame(maxWidth: .infinity, minHeight: minHeight)
             .foregroundStyle(foreground)
-            .background(background, in: Capsule())
+            .background(fillColor, in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -79,7 +79,7 @@ struct PillButton: View {
         }
     }
 
-    private var background: Color {
+    private var fillColor: Color {
         guard isEnabled else { return Theme.Colors.surfaceSecondary }
         switch style {
         case .primary: return Theme.Colors.ink

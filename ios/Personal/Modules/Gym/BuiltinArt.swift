@@ -12,7 +12,7 @@ enum BuiltinArt {
 
     /// The symbol drawn on the tile. `slug` wins, then a cardio muscle group,
     /// then the equipment table, then `dumbbell`.
-    static func symbol(
+    nonisolated static func symbol(
         for slug: String,
         equipment: Equipment? = nil,
         muscleGroup: MuscleGroup? = nil
@@ -64,19 +64,21 @@ enum BuiltinArt {
 
     /// The slug of a `builtin/<slug>` image key, or an empty string for any
     /// other key — what `tile(slug:…)` wants.
-    static func slug(fromImageKey key: String?) -> String {
+    nonisolated static func slug(fromImageKey key: String?) -> String {
         guard let key, key.hasPrefix(builtinPrefix) else { return "" }
         return String(key.dropFirst(builtinPrefix.count))
     }
 
-    static let builtinPrefix = "builtin/"
+    /// `nonisolated` so the image store — an actor — can test a key
+    /// against it without hopping to the main actor.
+    nonisolated static let builtinPrefix = "builtin/"
 
-    private static let defaultSymbol = "dumbbell"
-    private static let cardioSymbol = "figure.run"
+    private nonisolated static let defaultSymbol = "dumbbell"
+    private nonisolated static let cardioSymbol = "figure.run"
 
     /// The few seed slugs whose equipment default would be misleading. Every
     /// name here exists in SF Symbols on iOS 26.
-    private static let specialSymbols: [String: String] = [
+    private nonisolated static let specialSymbols: [String: String] = [
         "treadmill": "figure.run.treadmill",
         "stationary-bike": "figure.indoor.cycle",
         "rowing-machine": "figure.rower",

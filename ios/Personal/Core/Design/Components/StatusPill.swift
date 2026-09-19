@@ -41,7 +41,7 @@ struct StatusPill: View {
             .foregroundStyle(foreground)
             .padding(.horizontal, Theme.Spacing.sm)
             .padding(.vertical, Theme.Spacing.xs)
-            .background(background, in: Capsule())
+            .background(fillColor, in: Capsule())
     }
 
     private var foreground: Color {
@@ -53,7 +53,7 @@ struct StatusPill: View {
         }
     }
 
-    private var background: Color {
+    private var fillColor: Color {
         switch kind {
         case .completed, .pr: Theme.Colors.successSoft
         case .inProgress: Theme.Colors.infoSoft
