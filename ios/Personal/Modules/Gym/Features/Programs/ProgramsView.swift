@@ -20,7 +20,12 @@ struct ProgramsView: View {
     private let environment: AppEnvironment
 
     @State private var model: ProgramsViewModel
-    @State private var path: [ProgramsRoute] = []
+    /// Type-erased on purpose. The stack pushes two unrelated route types:
+    /// its own ``ProgramsRoute`` and the ``ExercisesRoute`` the catalog
+    /// appends two screens down. A `[ProgramsRoute]` has nowhere to put the
+    /// second one, so the link would render and the tap would do nothing —
+    /// silently, because `NavigationLink(value:)` has no way to complain.
+    @State private var path = NavigationPath()
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -49,7 +54,7 @@ struct ProgramsView: View {
                         systemImage: "magnifyingglass",
                         accessibilityLabel: "Exercise catalog"
                     ) {
-                        path.append(.exercises)
+                        path.append(ProgramsRoute.exercises)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -62,6 +67,10 @@ struct ProgramsView: View {
             .navigationDestination(for: ProgramsRoute.self) { route in
                 destination(route)
             }
+            // Registered at the root, not on the catalog that pushes it: a
+            // destination declared by a pushed view stops resolving the
+            // moment that view leaves the hierarchy.
+            .exerciseCatalogDestination(environment: environment)
         }
         .sheet(item: $model.pendingDeletion) { row in
             SlideToConfirmSheet(
@@ -75,7 +84,7 @@ struct ProgramsView: View {
         .sheet(isPresented: $model.isCreating) {
             NewProgramSheet(name: $model.newName) {
                 if let programId = model.createProgram(name: model.newName) {
-                    path.append(.program(programId))
+                    path.append(ProgramsRoute.program(programId))
                 }
             }
         }

@@ -139,7 +139,15 @@ final class ExerciseDetailViewModel {
     }
 
     /// Resize → `PUT` → `setImageKey` → sync (spec §7).
+    ///
+    /// A second call while the first is still in flight is refused out loud:
+    /// the user picked two photos in a row and deserves to know which one the
+    /// exercise ended up with.
     func upload(_ image: UIImage) async {
+        guard isUploading == false else {
+            toast = .error("An upload is already in progress")
+            return
+        }
         guard canUploadPhoto else { return }
         isUploading = true
         do {
@@ -397,14 +405,23 @@ struct ExerciseDetailView: View {
     /// `photoItem` is cleared only once the upload has finished, so the
     /// picker cannot hand back the same asset twice and nothing cancels the
     /// request halfway through.
+    ///
+    /// And only if it is still the item this task started with: a second pick
+    /// made while the first was uploading has already replaced the binding,
+    /// and clearing it here would cancel the newer flow before it began.
     private func handlePickedPhoto(_ item: PhotosPickerItem) async {
         let data = try? await item.loadTransferable(type: Data.self)
         guard let data, let image = UIImage(data: data) else {
-            photoItem = nil
+            clearPick(item)
             model.toast = .error("Could not read that photo.")
             return
         }
         await model.upload(image)
+        clearPick(item)
+    }
+
+    private func clearPick(_ item: PhotosPickerItem) {
+        guard photoItem == item else { return }
         photoItem = nil
     }
 }

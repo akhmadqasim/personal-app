@@ -2,11 +2,30 @@ import SwiftUI
 
 /// Where a push from the exercise catalog can land.
 ///
-/// The catalog owns this rather than borrowing ``ProgramsRoute``: it registers
-/// the destination itself, so it works in a `#Preview` and would work from any
-/// other stack that pushes it later.
+/// The catalog owns this rather than borrowing ``ProgramsRoute``: the two
+/// screens are pushed from the same stack but answer to different questions,
+/// and a catalog that carried a Programs route could not be hosted anywhere
+/// else. Whoever hosts ``ExerciseListView`` registers it with
+/// `exerciseCatalogDestination(environment:)`.
 nonisolated enum ExercisesRoute: Hashable, Sendable {
     case exercise(String)
+}
+
+extension View {
+    /// Registers the catalog's push destination on a navigation stack.
+    ///
+    /// It lives here, next to the route it resolves, and goes on the **stack
+    /// root** rather than on ``ExerciseListView`` itself: a destination
+    /// declared by a pushed view only resolves while that view is in the
+    /// hierarchy, and the root is the one place that is always true.
+    func exerciseCatalogDestination(environment: AppEnvironment) -> some View {
+        navigationDestination(for: ExercisesRoute.self) { route in
+            switch route {
+            case .exercise(let exerciseId):
+                ExerciseDetailView(environment: environment, exerciseId: exerciseId)
+            }
+        }
+    }
 }
 
 /// The exercise catalog (spec §6, design §4): a muscle-group chip row, a
@@ -45,12 +64,6 @@ struct ExerciseListView: View {
         .navigationTitle("Exercises")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
-        .navigationDestination(for: ExercisesRoute.self) { route in
-            switch route {
-            case .exercise(let exerciseId):
-                ExerciseDetailView(environment: environment, exerciseId: exerciseId)
-            }
-        }
         .searchable(text: $model.search, prompt: "Search exercises")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -165,15 +178,26 @@ struct MuscleGroupChips: View {
 // MARK: - Previews
 
 #Preview("Light") {
-    NavigationStack {
-        ExerciseListView(environment: AppEnvironment.preview())
-    }
-    .preferredColorScheme(.light)
+    ExerciseCatalogPreview()
+        .preferredColorScheme(.light)
 }
 
 #Preview("Dark") {
-    NavigationStack {
-        ExerciseListView(environment: AppEnvironment.preview())
+    ExerciseCatalogPreview()
+        .preferredColorScheme(.dark)
+}
+
+/// A stack that registers the destination the way the Programs tab does, so a
+/// tap in the preview pushes the detail instead of doing nothing.
+private struct ExerciseCatalogPreview: View {
+
+    @State private var environment = AppEnvironment.preview()
+    @State private var path = NavigationPath()
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            ExerciseListView(environment: environment)
+                .exerciseCatalogDestination(environment: environment)
+        }
     }
-    .preferredColorScheme(.dark)
 }

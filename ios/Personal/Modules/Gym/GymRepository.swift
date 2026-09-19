@@ -675,7 +675,7 @@ nonisolated final class GymRepository: Sendable {
                 sql: """
                     UPDATE program
                     SET is_active = 0, updated_at = ?, dirty = 1
-                    WHERE is_active = 1 AND id <> ?
+                    WHERE is_active = 1 AND id <> ? AND deleted_at IS NULL
                     """,
                 arguments: [now, id])
             try db.execute(

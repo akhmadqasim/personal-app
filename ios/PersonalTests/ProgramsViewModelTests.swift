@@ -256,6 +256,22 @@ struct ProgramsViewModelTests {
 
     // MARK: - The repository's reorder transaction
 
+    @Test func makingAProgramActiveDoesNotRestampTombstones() throws {
+        let (repository, clock) = try makeProgramsFixture()
+        // The first one created is active; deleting it leaves a tombstone
+        // that still carries `is_active = 1`.
+        let deleted = try repository.createProgram(name: "Push Pull Legs")
+        let spared = try repository.createProgram(name: "Upper Lower")
+        try repository.softDelete(.program, id: deleted.id)
+        let tombstoneStamp = try repository.updatedAt(of: .program, id: deleted.id)
+        clock.advance(by: 1000)
+
+        try repository.setActiveProgram(id: spared.id)
+
+        let after = try repository.updatedAt(of: .program, id: deleted.id)
+        #expect(after == tombstoneStamp)
+    }
+
     @Test func updatePositionsStampsEveryRowWithTheSameInstant() throws {
         let (repository, clock) = try makeProgramsFixture()
         let program = try repository.createProgram(name: "Push Pull Legs")
