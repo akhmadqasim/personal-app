@@ -14,6 +14,8 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
 
     var thumbnail: Thumbnail
     var caption: String?
+    /// Optional 16 pt symbol before the caption text (spec §3).
+    var captionSymbol: String?
     var title: String
     var meta: [Meta]
     var pill: StatusPill?
@@ -25,6 +27,7 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
     init(
         @ViewBuilder thumbnail: () -> Thumbnail,
         caption: String? = nil,
+        captionSymbol: String? = nil,
         title: String,
         meta: [Meta] = [],
         pill: StatusPill? = nil,
@@ -32,6 +35,7 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
     ) {
         self.thumbnail = thumbnail()
         self.caption = caption
+        self.captionSymbol = captionSymbol
         self.title = title
         self.meta = meta
         self.pill = pill
@@ -68,10 +72,7 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
     private var textColumn: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             if let caption {
-                Text(caption)
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .lineLimit(1)
+                captionLine(caption)
             }
             Text(title)
                 .font(Theme.Typography.headline)
@@ -81,6 +82,22 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
                 metaLine(meta[index])
             }
         }
+    }
+
+    /// The context line above the title: "Push A · Week 3", led by a 16 pt
+    /// symbol when the screen has one to give.
+    private func captionLine(_ text: String) -> some View {
+        HStack(spacing: Theme.Spacing.xs + 2) {
+            if let captionSymbol {
+                Image(systemName: captionSymbol)
+                    .font(.system(size: 16, weight: .regular))
+                    .frame(width: 16)
+            }
+            Text(text)
+                .font(Theme.Typography.caption)
+                .lineLimit(1)
+        }
+        .foregroundStyle(Theme.Colors.textSecondary)
     }
 
     private func metaLine(_ item: Meta) -> some View {
@@ -102,6 +119,7 @@ extension ThumbnailRow where Trailing == EmptyView {
     init(
         @ViewBuilder thumbnail: () -> Thumbnail,
         caption: String? = nil,
+        captionSymbol: String? = nil,
         title: String,
         meta: [Meta] = [],
         pill: StatusPill? = nil
@@ -109,6 +127,7 @@ extension ThumbnailRow where Trailing == EmptyView {
         self.init(
             thumbnail: thumbnail,
             caption: caption,
+            captionSymbol: captionSymbol,
             title: title,
             meta: meta,
             pill: pill,
@@ -124,6 +143,7 @@ private struct ThumbnailRowGallery: View {
             ThumbnailRow(
                 thumbnail: { tile("chest", symbol: "dumbbell") },
                 caption: "Push A · Week 3",
+                captionSymbol: "calendar",
                 title: "Barbell Bench Press",
                 meta: [("dumbbell", "Barbell · Chest"), ("clock", "48 min")],
                 pill: StatusPill(.completed),

@@ -22,7 +22,13 @@ actor ImageStore {
 
     private let api: APIClient
     private let cacheDirectory: URL
+    /// Unbounded on purpose for now: a catalog is a few dozen small JPEGs, and
+    /// the system drops the whole store when the app is suspended. Add a cap
+    /// here the day a screen shows hundreds of photos at once.
     private var memory: [String: Data] = [:]
+    /// One download per key, however many views ask for it at the same time —
+    /// a fresh list can otherwise fire the same request once per row.
+    private var inFlight: [String: Task<Data?, Never>] = [:]
 
     init(api: APIClient, cacheDirectory: URL = ImageStore.defaultCacheDirectory()) {
         self.api = api
@@ -51,11 +57,20 @@ actor ImageStore {
             memory[key] = onDisk
             return onDisk
         }
-        guard let response = try? await api.getData("/api/gym/images/\(key)") else {
-            return nil
+        if let running = inFlight[key] {
+            return await running.value
         }
-        let data = response.0
-        guard data.isEmpty == false else { return nil }
+        let download = Task<Data?, Never> { [api] in
+            guard let response = try? await api.getData("/api/gym/images/\(key)") else {
+                return nil
+            }
+            let bytes = response.0
+            return bytes.isEmpty ? nil : bytes
+        }
+        inFlight[key] = download
+        let data = await download.value
+        inFlight[key] = nil
+        guard let data else { return nil }
         memory[key] = data
         writeToCache(data, at: file)
         return data

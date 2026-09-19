@@ -70,13 +70,18 @@ struct ComponentsTests {
     }
 
     @Test func todayIsNamedNotDated() {
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
-        #expect(DateFormat.dayHeader(now).primary == "Today")
+        let today = Self.milliseconds(Date.now)
+        #expect(DateFormat.dayHeader(today).primary == "Today")
     }
 
     @Test func tomorrowIsNamedNotDated() {
-        let tomorrow = Int64(Date().timeIntervalSince1970 * 1000) + 86_400_000
+        let tomorrow = Self.day(after: 1)
         #expect(DateFormat.dayHeader(tomorrow).primary == "Tomorrow")
+    }
+
+    @Test func yesterdayIsNamedNotDated() {
+        let yesterday = Self.day(after: -1)
+        #expect(DateFormat.dayHeader(yesterday).primary == "Yesterday")
     }
 
     // MARK: - Toasts
@@ -150,6 +155,16 @@ struct ComponentsTests {
         APIClient(
             baseURL: URL(string: "https://offline.invalid")!,
             tokenProvider: { nil })
+    }
+
+    private static func milliseconds(_ date: Date) -> Int64 {
+        Int64(date.timeIntervalSince1970 * 1000)
+    }
+
+    /// Calendar arithmetic, not 86_400_000 ms: a day is not always 24 hours.
+    private static func day(after days: Int) -> Int64 {
+        let date = Calendar.current.date(byAdding: .day, value: days, to: Date.now) ?? Date.now
+        return milliseconds(date)
     }
 
     private static func temporaryDirectory() -> URL {

@@ -30,17 +30,14 @@ struct SheetHeader: View {
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .frame(width: 44, height: 44)
                     .background(Theme.Colors.surfaceSecondary, in: Circle())
+                    // Decoration: the title says what the sheet is about.
+                    .accessibilityHidden(true)
                 Spacer(minLength: Theme.Spacing.sm)
                 if let onClose {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(Theme.Colors.surfaceSecondary, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close")
+                    CircleIconButton(
+                        systemImage: "xmark",
+                        accessibilityLabel: "Close",
+                        action: onClose)
                 }
             }
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {

@@ -45,14 +45,19 @@ enum ImageUploader {
 
     /// Scales the longest side down to `maxPixelSide`. An image already small
     /// enough is returned untouched — re-rendering it would only cost quality.
+    ///
+    /// Measured in pixels, not points: a photo from the camera comes back at
+    /// `scale` 2 or 3, so `size` alone would let a 3072 px image through.
     @MainActor
     static func resized(_ image: UIImage) -> UIImage {
-        let longest = max(image.size.width, image.size.height)
+        let pixelWidth = image.size.width * image.scale
+        let pixelHeight = image.size.height * image.scale
+        let longest = max(pixelWidth, pixelHeight)
         guard longest > maxPixelSide, longest > 0 else { return image }
-        let scale = maxPixelSide / longest
+        let ratio = maxPixelSide / longest
         let target = CGSize(
-            width: (image.size.width * scale).rounded(),
-            height: (image.size.height * scale).rounded())
+            width: (pixelWidth * ratio).rounded(),
+            height: (pixelHeight * ratio).rounded())
 
         let format = UIGraphicsImageRendererFormat.default()
         // Point size == pixel size: the server stores pixels, not points.

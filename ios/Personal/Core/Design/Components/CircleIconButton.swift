@@ -8,13 +8,15 @@ import SwiftUI
 struct CircleIconButton: View {
 
     var systemImage: String
-    /// VoiceOver label; icon-only controls must carry one (spec §6).
-    var accessibilityLabel: String?
+    /// VoiceOver label. Required, not optional: an icon-only control with no
+    /// label is announced as its symbol name ("chevron.left"), which spec §6
+    /// rules out, and a default would let that slip through unnoticed.
+    var accessibilityLabel: String
     var action: () -> Void
 
     init(
         systemImage: String,
-        accessibilityLabel: String? = nil,
+        accessibilityLabel: String,
         action: @escaping () -> Void
     ) {
         self.systemImage = systemImage
@@ -32,7 +34,7 @@ struct CircleIconButton: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .circle)
-        .accessibilityLabel(accessibilityLabel ?? systemImage)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 

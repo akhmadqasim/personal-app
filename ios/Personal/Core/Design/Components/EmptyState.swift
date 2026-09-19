@@ -31,7 +31,7 @@ struct EmptyState: View {
                 .frame(width: 72, height: 72)
                 .background(
                     Theme.Colors.surfaceSecondary,
-                    in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: Theme.Radius.thumb, style: .continuous))
             Text(title)
                 .font(Theme.Typography.headline)
                 .foregroundStyle(Theme.Colors.textSecondary)

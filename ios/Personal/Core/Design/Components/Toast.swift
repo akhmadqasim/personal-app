@@ -72,16 +72,26 @@ struct ToastModifier: ViewModifier {
 
     @Binding var item: ToastItem?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .top) {
                 if let item {
                     ToastView(item: item)
                         .padding(.horizontal, Theme.Spacing.screenInset)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.top, Theme.Spacing.sm)
+                        .transition(toastTransition)
                 }
             }
             .animation(.easeOut(duration: 0.25), value: item)
+            // A toast is not in the reading order, so VoiceOver would never
+            // reach it; announce it instead.
+            .onChange(of: item) { _, newValue in
+                if let newValue {
+                    AccessibilityNotification.Announcement(newValue.message).post()
+                }
+            }
             // `task(id:)` restarts the countdown whenever a new toast replaces
             // the current one, and cancels it when the toast is dismissed.
             .task(id: item) {
@@ -90,6 +100,11 @@ struct ToastModifier: ViewModifier {
                 guard Task.isCancelled == false else { return }
                 item = nil
             }
+    }
+
+    /// Reduce Motion replaces the slide with a plain fade (spec §5).
+    private var toastTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
     }
 }
 
