@@ -88,6 +88,36 @@ private func seedProgressFixture(_ repository: GymRepository) throws {
 
 struct GymRepositoryProgressTests {
 
+    // MARK: - Week boundaries
+
+    @Test func weekStartSnapsBackToMonday() {
+        #expect(GymRepository.weekStart(of: mondayBase) == mondayBase)
+        #expect(GymRepository.weekStart(of: mondayBase + 6 * dayMs + 23 * hourMs) == mondayBase)
+        #expect(GymRepository.weekStart(of: mondayBase + weekMs) == mondayBase + weekMs)
+    }
+
+    @Test func theCurrentWeekIsTheMondayOnOrBeforeNow() throws {
+        let (repository, clock) = try makeProgressRepository()
+
+        #expect(repository.currentWeekStartMs() == mondayBase + 4 * weekMs)
+
+        clock.set(mondayBase + 5 * weekMs)
+        #expect(repository.currentWeekStartMs() == mondayBase + 5 * weekMs)
+    }
+
+    // MARK: - Best set per session
+
+    @Test func bestSetPointsCarryTheirSessionId() throws {
+        let (repository, _) = try makeProgressRepository()
+        try seedProgressFixture(repository)
+
+        let points = try repository.bestSetPerSession(exerciseId: "e1", weeks: 12)
+
+        #expect(points.count == 3)
+        #expect(points[0].sessionId == "s1")
+        #expect(points[2].sessionId == "s3")
+    }
+
     // MARK: - Weekly volume
 
     @Test func weeklyVolumeSumsCompletedSetsPerWeek() throws {

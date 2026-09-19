@@ -1,10 +1,15 @@
 import SwiftUI
 
-/// Picks an exercise to add to the running session (spec §6): a chips row for
-/// the muscle group and a search field over the catalog.
+/// Picks an exercise out of the catalog (spec §6): a chips row for the muscle
+/// group and a search field over the catalog.
 ///
 /// Reads go through ``GymRepository/exercises(muscleGroup:search:)``, which
 /// already escapes the search term and filters out soft-deleted rows.
+///
+/// Two screens use it, and the defaults are the Session screen's: it adds a
+/// movement to the running session, so the sheet is "Add exercise", offers "+"
+/// to create one on the spot and marks each row with a plus. The Progress tab
+/// only chooses the subject of a chart, so it overrides all three.
 struct ExercisePickerSheet: View {
 
     var repository: GymRepository
@@ -12,6 +17,14 @@ struct ExercisePickerSheet: View {
     /// Optional: a movement created from inside the sheet should reach the
     /// server without waiting for the next unrelated write.
     var scheduler: SyncScheduler?
+    /// Sheet title — what picking is *for*.
+    var title: String
+    /// Whether the header offers "+" to create a movement on the spot. A
+    /// chart can only be drawn for a movement that already has sets, so
+    /// Progress turns it off.
+    var allowsCreating: Bool
+    /// Trailing glyph of a row, hinting what the tap does.
+    var rowSymbol: String
     var onPick: (Exercise) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -20,16 +33,23 @@ struct ExercisePickerSheet: View {
     @State private var muscleGroup: MuscleGroup?
     @State private var results: [Exercise] = []
     @State private var isCreating = false
+    @State private var toast: ToastItem?
 
     init(
         repository: GymRepository,
         imageStore: ImageStore?,
         scheduler: SyncScheduler? = nil,
+        title: String = "Add exercise",
+        allowsCreating: Bool = true,
+        rowSymbol: String = "plus.circle",
         onPick: @escaping (Exercise) -> Void
     ) {
         self.repository = repository
         self.imageStore = imageStore
         self.scheduler = scheduler
+        self.title = title
+        self.allowsCreating = allowsCreating
+        self.rowSymbol = rowSymbol
         self.onPick = onPick
     }
 
@@ -55,15 +75,18 @@ struct ExercisePickerSheet: View {
                 .padding(.bottom, Theme.Spacing.xxxl)
             }
             .background(Theme.Colors.canvas)
-            .navigationTitle("Add exercise")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             // Inside the stack, not on it: `searchable` binds to the nearest
             // enclosing navigation container.
             .searchable(text: $search, prompt: "Search exercises")
+            .toast($toast)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    CircleIconButton(systemImage: "plus", accessibilityLabel: "New exercise") {
-                        isCreating = true
+                if allowsCreating {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        CircleIconButton(systemImage: "plus", accessibilityLabel: "New exercise") {
+                            isCreating = true
+                        }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -97,7 +120,14 @@ struct ExercisePickerSheet: View {
     }
 
     private func reload() {
-        results = (try? repository.exercises(muscleGroup: muscleGroup, search: search)) ?? []
+        do {
+            results = try repository.exercises(muscleGroup: muscleGroup, search: search)
+        } catch {
+            // Keep the rows that are already on screen: swallowing the error
+            // into an empty list reads as "no exercises found", which sends
+            // the user looking for a movement that is right there.
+            toast = .error("Could not read the exercise catalog.")
+        }
     }
 
     // MARK: - Pieces
@@ -120,7 +150,7 @@ struct ExercisePickerSheet: View {
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 Spacer(minLength: Theme.Spacing.sm)
-                Image(systemName: "plus.circle")
+                Image(systemName: rowSymbol)
                     .font(.system(size: 20, weight: .regular))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }

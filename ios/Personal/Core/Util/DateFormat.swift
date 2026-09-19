@@ -32,10 +32,16 @@ enum DateFormat {
         shortDateFormatter.string(from: date(ms))
     }
 
-    /// "8 Sep" — the compact day a chart axis label has room for, where the
-    /// full month name of ``dayHeader(_:)`` would collide with its neighbours.
-    static func dayMonthShort(_ ms: Int64) -> String {
-        dayMonthShortFormatter.string(from: date(ms))
+    /// "8 Sep" **in UTC** — the label of a weekly volume bar.
+    ///
+    /// Week buckets are Monday 00:00 UTC
+    /// (``GymRepository/weeklyVolume(exerciseId:weeks:)``). Formatting that
+    /// instant in the device's own timezone would print the Sunday before it
+    /// anywhere west of Greenwich, so the label would name a day the bucket
+    /// does not start on. The compact template also keeps the label narrow
+    /// enough for an axis, which ``dayHeader(_:)``'s full month name is not.
+    static func weekStartShort(_ ms: Int64) -> String {
+        weekStartShortFormatter.string(from: date(ms))
     }
 
     /// The clock time of a session, in the user's own 12/24-hour setting.
@@ -85,10 +91,12 @@ enum DateFormat {
         return formatter
     }()
 
-    /// "8 Sep" — the template lets the locale decide the order.
-    private static let dayMonthShortFormatter: DateFormatter = {
+    /// "8 Sep" in UTC — the template lets the locale decide the order, the
+    /// fixed timezone keeps the day the bucket's own.
+    private static let weekStartShortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("dMMM")
+        formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter
     }()
 

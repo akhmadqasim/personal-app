@@ -62,9 +62,11 @@ struct WeeklyVolumeCard: View {
             }
         }
         // No gridlines on the category axis: they would separate the bars
-        // rather than help read their height.
+        // rather than help read their height. Labels are thinned to every
+        // third week plus the last — twelve of them collide in the ~310 pt
+        // the card leaves for the plot.
         .chartXAxis {
-            AxisMarks { _ in
+            AxisMarks(values: labelledWeeks) { _ in
                 AxisValueLabel()
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.textTertiary)
@@ -79,9 +81,8 @@ struct WeeklyVolumeCard: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
         }
-        .chartXAxisLabel {
-            axisLabel("Week")
-        }
+        // No x title: the labels already read as dates, and "Week" would only
+        // repeat the card's own header.
         .chartYAxisLabel {
             axisLabel("kg")
         }
@@ -90,6 +91,20 @@ struct WeeklyVolumeCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Weekly volume over the last 12 weeks")
         .accessibilityValue(accessibilityValue)
+    }
+
+    /// Every third week plus the last one, so the axis never draws twelve
+    /// labels next to each other. The last is always there: the bar the user
+    /// cares about most is the one they are in.
+    private var labelledWeeks: [String] {
+        var labels: [String] = []
+        for index in weeks.indices where index % 3 == 0 {
+            labels.append(weeks[index].label)
+        }
+        if let last = weeks.last, labels.contains(last.label) == false {
+            labels.append(last.label)
+        }
+        return labels
     }
 
     private func axisLabel(_ text: String) -> some View {
@@ -103,8 +118,15 @@ struct WeeklyVolumeCard: View {
 
 private let volumePreviewWeeks: [ProgressWeek] = {
     let start = Date(timeIntervalSince1970: 1_693_785_600)
-    let volumes: [Double] = [2_400, 2_880, 0, 3_120, 3_400, 3_050]
-    let labels = ["4 Sep", "11 Sep", "18 Sep", "25 Sep", "2 Oct", "9 Oct"]
+    // Twelve weeks including a three-week layoff, which is what the zero-fill
+    // exists to show.
+    let volumes: [Double] = [
+        2_400, 2_880, 0, 3_120, 3_400, 3_050, 0, 0, 2_900, 3_300, 3_450, 3_600,
+    ]
+    let labels = [
+        "4 Sep", "11 Sep", "18 Sep", "25 Sep", "2 Oct", "9 Oct",
+        "16 Oct", "23 Oct", "30 Oct", "6 Nov", "13 Nov", "20 Nov",
+    ]
     var result: [ProgressWeek] = []
     for index in volumes.indices {
         result.append(
@@ -122,11 +144,11 @@ private struct WeeklyVolumeCardGallery: View {
             WeeklyVolumeCard(
                 muscleGroup: "chest",
                 weeks: volumePreviewWeeks,
-                accessibilityValue: "6 weeks, 14850 kg in total")
+                accessibilityValue: "12 weeks, 28,100 kg in total")
             WeeklyVolumeCard(
                 muscleGroup: "quads",
                 weeks: volumePreviewWeeks,
-                accessibilityValue: "6 weeks, 14850 kg in total")
+                accessibilityValue: "12 weeks, 28,100 kg in total")
         }
         .padding(Theme.Spacing.screenInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

@@ -109,9 +109,8 @@ struct ExerciseChartCard: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
         }
-        .chartXAxisLabel {
-            axisLabel("Session date")
-        }
+        // No x title: the labels already read as dates, and "Session date"
+        // would only repeat the card's own header.
         .chartYAxisLabel {
             axisLabel("kg")
         }
@@ -139,6 +138,7 @@ private let chartPreviewPoints: [ProgressPoint] = {
     for index in weights.indices {
         result.append(
             ProgressPoint(
+                id: "session-\(index)",
                 date: start.addingTimeInterval(Double(index) * 7 * 24 * 60 * 60),
                 weightKg: weights[index]))
     }

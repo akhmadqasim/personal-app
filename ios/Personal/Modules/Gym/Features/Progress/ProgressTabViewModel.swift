@@ -16,17 +16,21 @@ nonisolated enum ProgressState: Equatable, Sendable {
 
 /// One point of the line chart: the heaviest set of one session.
 nonisolated struct ProgressPoint: Equatable, Sendable, Identifiable {
+    /// The session the point came from — the identity, rather than the date:
+    /// two sessions started in the same millisecond would collide, and the id
+    /// is what the row is keyed on everywhere else.
+    var id: String
     var date: Date
     var weightKg: Double
-
-    /// Sessions cannot share a millisecond, so the date is the identity.
-    var id: Date { date }
 }
 
-/// One bar of the volume chart: a week and what was lifted in it.
+/// One bar of the volume chart: a week and what was lifted in it. Weeks with
+/// no training are present with a `volumeKg` of zero — a layoff is a fact the
+/// chart has to show, not a gap it may hide.
 nonisolated struct ProgressWeek: Equatable, Sendable, Identifiable {
+    /// Monday 00:00 UTC of that week.
     var weekStart: Date
-    /// Short axis label of that week, "8 Sep".
+    /// Short axis label of that week, "8 Sep", formatted in UTC.
     var label: String
     var volumeKg: Double
 
@@ -116,7 +120,8 @@ final class ProgressTabViewModel {
             + " to \(WeightFormat.plain(last.weightKg)) kg"
     }
 
-    /// The same, for the volume bars.
+    /// The same, for the volume bars. The total is grouped ("12,480 kg"):
+    /// VoiceOver reads a bare five-digit number digit by digit.
     var volumeAccessibilityValue: String {
         guard weeklyVolume.isEmpty == false else { return "No volume yet" }
         var total: Double = 0
@@ -124,7 +129,7 @@ final class ProgressTabViewModel {
             total += week.volumeKg
         }
         let noun = weeklyVolume.count == 1 ? "week" : "weeks"
-        return "\(weeklyVolume.count) \(noun), \(WeightFormat.plain(total)) kg in total"
+        return "\(weeklyVolume.count) \(noun), \(total.formatted()) kg in total"
     }
 
     // MARK: - Reading
@@ -148,18 +153,23 @@ final class ProgressTabViewModel {
                 return
             }
 
+            // `top` is not empty, so `resolveSelection` always answers.
             let chosen = try resolveSelection(in: top)
             selected = chosen
-            guard let chosen else {
-                state = .empty
-                return
-            }
             try loadSeries(for: chosen)
         } catch {
             // Keep whatever is on screen: a failed read says nothing about
-            // whether the user has trained, and blanking the tab into
+            // whether the user has trained, and blanking a filled tab into
             // "Nothing logged yet" would be a lie about their history.
+            //
+            // The one exception is the very first read: leaving `.loading` in
+            // place would spin forever behind a toast the user has already
+            // dismissed, so the empty state takes over and `.task` retries on
+            // the next appearance.
             toast = .error("Could not read the local database.")
+            if state == .loading {
+                state = .empty
+            }
         }
     }
 
@@ -174,8 +184,8 @@ final class ProgressTabViewModel {
 
     /// The user's pick when it still exists — it may have been chosen in the
     /// search sheet and sit outside the top six — and the heaviest-trained
-    /// exercise otherwise.
-    private func resolveSelection(in top: [Exercise]) throws -> Exercise? {
+    /// exercise otherwise. `top` is never empty at the one call site.
+    private func resolveSelection(in top: [Exercise]) throws -> Exercise {
         if let selectedId {
             if let match = top.first(where: { $0.id == selectedId }) {
                 return match
@@ -184,7 +194,7 @@ final class ProgressTabViewModel {
                 return stored
             }
         }
-        return top.first
+        return top[0]
     }
 
     private func loadSeries(for exercise: Exercise) throws {
@@ -192,18 +202,13 @@ final class ProgressTabViewModel {
             exerciseId: exercise.id,
             weeks: Self.windowWeeks)
         points = bestSets.map { set in
-            ProgressPoint(date: Self.date(set.sessionStartedAt), weightKg: set.weightKg)
+            ProgressPoint(
+                id: set.sessionId,
+                date: Self.date(set.sessionStartedAt),
+                weightKg: set.weightKg)
         }
 
-        let volume = try repository.weeklyVolume(
-            exerciseId: exercise.id,
-            weeks: Self.windowWeeks)
-        weeklyVolume = volume.map { week in
-            ProgressWeek(
-                weekStart: Self.date(week.weekStartMs),
-                label: DateFormat.dayMonthShort(week.weekStartMs),
-                volumeKg: week.volumeKg)
-        }
+        weeklyVolume = try loadWeeklyVolume(for: exercise)
 
         let record = try repository.personalBest(
             exerciseId: exercise.id,
@@ -215,6 +220,43 @@ final class ProgressTabViewModel {
         }
 
         state = points.count >= Self.minimumSessions ? .ready : .notEnoughData
+    }
+
+    /// Exactly ``windowWeeks`` bars: the week that is running now and the
+    /// eleven before it, each carrying whatever was lifted in it or zero.
+    ///
+    /// The repository only returns weeks that have training in them, so a
+    /// three-week layoff would otherwise collapse into two adjacent bars and
+    /// read as "trained twice in a row". Zero-filling also makes the chart's
+    /// "over the last 12 weeks" label true, and pins the x domain so two
+    /// exercises are drawn on the same axis.
+    ///
+    /// The window starts on a Monday by construction, so the leftmost bar is a
+    /// whole week rather than the stump `now − 12 weeks` would cut. A session
+    /// that falls in the part-week between the repository's cutoff and that
+    /// Monday is outside the twelve bars and is dropped here.
+    private func loadWeeklyVolume(for exercise: Exercise) throws -> [ProgressWeek] {
+        let logged = try repository.weeklyVolume(
+            exerciseId: exercise.id,
+            weeks: Self.windowWeeks)
+        var byWeekStart: [Int64: Double] = [:]
+        for week in logged {
+            byWeekStart[week.weekStartMs] = week.volumeKg
+        }
+
+        let lastStart = repository.currentWeekStartMs()
+        let firstStart = lastStart - Int64(Self.windowWeeks - 1) * GymRepository.weekMs
+        var result: [ProgressWeek] = []
+        var start = firstStart
+        while start <= lastStart {
+            result.append(
+                ProgressWeek(
+                    weekStart: Self.date(start),
+                    label: DateFormat.weekStartShort(start),
+                    volumeKg: byWeekStart[start] ?? 0))
+            start += GymRepository.weekMs
+        }
+        return result
     }
 
     private static func date(_ ms: Int64) -> Date {

@@ -3,6 +3,10 @@ import GRDB
 
 /// The best set of one session, for the Progress chart.
 nonisolated struct BestSet: Sendable, Equatable {
+    /// The session the point belongs to — a stable identity for `ForEach`,
+    /// where the timestamp would collide if two sessions ever started in the
+    /// same millisecond.
+    var sessionId: String
     /// Milliseconds since the epoch — the x axis.
     var sessionStartedAt: Int64
     /// Heaviest completed set of that session — the y axis.
@@ -240,7 +244,9 @@ nonisolated final class GymRepository: Sendable {
             let rows = try Row.fetchAll(
                 db,
                 sql: """
-                    SELECT ss.started_at AS started_at, MAX(s.weight_kg) AS weight_kg
+                    SELECT ss.id AS session_id,
+                           ss.started_at AS started_at,
+                           MAX(s.weight_kg) AS weight_kg
                     FROM workout_set s
                     JOIN workout_session ss ON ss.id = s.session_id
                     WHERE s.exercise_id = ?
@@ -253,9 +259,13 @@ nonisolated final class GymRepository: Sendable {
                     """,
                 arguments: [exerciseId, cutoff])
             return rows.map { row in
+                let sessionId: String = row["session_id"]
                 let startedAt: Int64 = row["started_at"]
                 let weightKg: Double = row["weight_kg"]
-                return BestSet(sessionStartedAt: startedAt, weightKg: weightKg)
+                return BestSet(
+                    sessionId: sessionId,
+                    sessionStartedAt: startedAt,
+                    weightKg: weightKg)
             }
         }
     }
@@ -377,6 +387,19 @@ nonisolated final class GymRepository: Sendable {
     /// every week bucket is measured from. The epoch itself is a Thursday, so
     /// dividing raw timestamps by a week would put the boundary on Thursdays.
     static let mondayAnchorMs: Int64 = 4 * 24 * 60 * 60 * 1000
+
+    /// Monday 00:00 UTC of the week `ms` falls in — the same arithmetic the
+    /// `weeklyVolume` query does, so a bucket built here lines up exactly with
+    /// one that came back from SQLite.
+    static func weekStart(of ms: Int64) -> Int64 {
+        ((ms - mondayAnchorMs) / weekMs) * weekMs + mondayAnchorMs
+    }
+
+    /// Monday 00:00 UTC of the week that is running now — the right-hand edge
+    /// of the Progress bars, and what the zero-filled window counts back from.
+    func currentWeekStartMs() -> Int64 {
+        Self.weekStart(of: clock.nowMs())
+    }
 
     // MARK: - Sync support
 

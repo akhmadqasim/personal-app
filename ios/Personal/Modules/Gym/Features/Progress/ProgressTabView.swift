@@ -42,10 +42,16 @@ struct ProgressTabView: View {
                     }
                 }
             }
+            // The Session screen's picker, told what it is picking for: a
+            // chart needs a movement that already has sets, so it neither
+            // offers "+ new exercise" nor marks the rows with a plus.
             .sheet(isPresented: $isPickingExercise) {
-                ProgressExercisePicker(
+                ExercisePickerSheet(
                     repository: environment.repository,
-                    imageStore: environment.imageStore
+                    imageStore: environment.imageStore,
+                    title: "Choose exercise",
+                    allowsCreating: false,
+                    rowSymbol: "chart.line.uptrend.xyaxis"
                 ) { exercise in
                     model.select(exercise)
                 }
@@ -164,105 +170,6 @@ private struct ExerciseChips: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
-    }
-}
-
-// MARK: - Search sheet
-
-/// The whole catalog behind the magnifying glass, in the style of the Session
-/// screen's picker (§4): a muscle-group chips row, a search field, and rows
-/// that hand the chosen exercise back through ``onPick``.
-///
-/// It reuses ``MuscleGroupChips`` and ``GymRepository/exercises(muscleGroup:search:)``
-/// rather than the Session picker itself: that sheet is titled "Add exercise"
-/// and offers a "+" to create one, neither of which belongs to a chart.
-private struct ProgressExercisePicker: View {
-
-    var repository: GymRepository
-    var imageStore: ImageStore?
-    var onPick: (Exercise) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var search = ""
-    @State private var muscleGroup: MuscleGroup?
-    @State private var results: [Exercise] = []
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    MuscleGroupChips(selection: muscleGroup) { group in
-                        muscleGroup = group
-                    }
-                    if results.isEmpty {
-                        EmptyState(
-                            symbol: "magnifyingglass",
-                            title: "No exercises found",
-                            message: "Try another muscle group or clear the search.")
-                    } else {
-                        ForEach(results) { exercise in
-                            row(exercise)
-                        }
-                    }
-                }
-                .padding(.horizontal, Theme.Spacing.screenInset)
-                .padding(.bottom, Theme.Spacing.xxxl)
-            }
-            .background(Theme.Colors.canvas)
-            .navigationTitle("Choose exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            // Inside the stack, not on it: `searchable` binds to the nearest
-            // enclosing navigation container.
-            .searchable(text: $search, prompt: "Search exercises")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    CircleIconButton(systemImage: "xmark", accessibilityLabel: "Close") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-        .presentationDetents([.large])
-        .presentationCornerRadius(Theme.Radius.sheet)
-        .task(id: queryKey) {
-            results = (try? repository.exercises(muscleGroup: muscleGroup, search: search)) ?? []
-        }
-    }
-
-    /// One `Equatable` value for `.task(id:)`, so a new filter or search term
-    /// restarts the query and nothing else does.
-    private var queryKey: String {
-        "\(muscleGroup?.rawValue ?? "")|\(search)"
-    }
-
-    private func row(_ exercise: Exercise) -> some View {
-        Button {
-            onPick(exercise)
-            dismiss()
-        } label: {
-            HStack(spacing: Theme.Spacing.md) {
-                ExerciseArtView(art: ExerciseArt(exercise), size: 44, store: imageStore)
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text(exercise.name)
-                        .font(Theme.Typography.headline)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    Text("\(exercise.equipment.label) · \(exercise.muscleGroup.label)")
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
-                Spacer(minLength: Theme.Spacing.sm)
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(Theme.Colors.textTertiary)
-            }
-            .frame(minHeight: Theme.Spacing.rowMinHeight)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Show progress for \(exercise.name)")
     }
 }
 

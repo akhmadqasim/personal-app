@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Personal
@@ -135,6 +136,9 @@ struct ProgressTabViewModelTests {
         #expect(model.points[0].weightKg == 60)
         #expect(model.points[1].weightKg == 62.5)
         #expect(model.points[2].weightKg == 65)
+        // The point is keyed on its session, not on its timestamp.
+        #expect(model.points[0].id == "s1")
+        #expect(model.points[2].id == "s3")
     }
 
     @Test func weeklyVolumeFollowsTheSelectedExercise() throws {
@@ -144,11 +148,59 @@ struct ProgressTabViewModelTests {
 
         model.reload()
 
-        #expect(model.weeklyVolume.count == 3)
-        #expect(model.weeklyVolume[0].volumeKg == 480)
-        #expect(model.weeklyVolume[1].volumeKg == 500)
-        #expect(model.weeklyVolume[2].volumeKg == 520)
-        #expect(model.volumeAccessibilityValue == "3 weeks, 1500 kg in total")
+        // Twelve buckets always: the running week and the eleven before it.
+        // The anchor sits seven weeks back in that window.
+        #expect(model.weeklyVolume.count == 12)
+        #expect(model.weeklyVolume[7].volumeKg == 480)
+        #expect(model.weeklyVolume[8].volumeKg == 500)
+        #expect(model.weeklyVolume[9].volumeKg == 520)
+        #expect(model.weeklyVolume[0].volumeKg == 0)
+        #expect(model.weeklyVolume[11].volumeKg == 0)
+
+        let expected = "12 weeks, \(Double(1_500).formatted()) kg in total"
+        #expect(model.volumeAccessibilityValue == expected)
+    }
+
+    /// A layoff has to draw as empty bars. Two weeks of training with a gap
+    /// between them would otherwise collapse into two neighbours and read as
+    /// "trained twice in a row".
+    @Test func weeksWithoutTrainingAreZeroFilled() throws {
+        let repository = try makeProgressFixture()
+        try seedExercises(repository)
+        try logSet(
+            repository, session: "s1", exerciseId: "e1",
+            startedAt: progressMonday + progressDayMs, weightKg: 60, reps: 8)
+        try logSet(
+            repository, session: "s2", exerciseId: "e1",
+            startedAt: progressMonday + 2 * progressWeekMs + progressDayMs, weightKg: 65, reps: 8)
+        let model = ProgressTabViewModel(repository: repository)
+
+        model.reload()
+
+        #expect(model.weeklyVolume.count == 12)
+        #expect(model.weeklyVolume[7].volumeKg == 480)
+        // The week in between was never trained.
+        #expect(model.weeklyVolume[8].volumeKg == 0)
+        #expect(model.weeklyVolume[9].volumeKg == 520)
+    }
+
+    /// The bars end on the week the user is in, and start eleven weeks before
+    /// it — always a Monday, so the leftmost bar is a whole week.
+    @Test func theBarsEndOnTheCurrentWeekAndStartOnAMonday() throws {
+        let repository = try makeProgressFixture()
+        try seedThreeSessions(repository)
+        let model = ProgressTabViewModel(repository: repository)
+
+        model.reload()
+
+        let first = try #require(model.weeklyVolume.first)
+        let last = try #require(model.weeklyVolume.last)
+        let firstMs = Int64(first.weekStart.timeIntervalSince1970 * 1000)
+        let lastMs = Int64(last.weekStart.timeIntervalSince1970 * 1000)
+
+        #expect(lastMs == progressMonday + 4 * progressWeekMs)
+        #expect(firstMs == progressMonday - 7 * progressWeekMs)
+        #expect(GymRepository.weekStart(of: firstMs) == firstMs)
     }
 
     @Test func theBestSetTileTakesTheHeaviestSet() throws {
