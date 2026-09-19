@@ -109,7 +109,9 @@ Deletes set `deleted_at` (soft) the same way. Reads always filter
 "run again"):
 
 1. Snapshot dirty rows per table (FK order, max 500 in total per request);
-   remember `(table, id, updated_at)` of what was pushed.
+   remember `(table, id, updated_at)` of what was pushed. Chunk in FK order too:
+   a parent goes in the same or an earlier chunk than its children, because an
+   FK violation is a 422 retrying cannot repair.
 2. `POST /api/sync { since_seq, push }`.
 3. On 200, in one write transaction:
    - for each pulled row: if a local row exists with `dirty = 1` and
