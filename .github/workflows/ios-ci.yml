@@ -1,0 +1,65 @@
+name: iOS CI
+
+on:
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios-ci.yml"]
+  push:
+    branches: [main]
+    paths: ["ios/**", ".github/workflows/ios-ci.yml"]
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.0.app || sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Resolve package dependencies
+        run: xcodebuild -resolvePackageDependencies -project Personal.xcodeproj -scheme Personal
+
+      - name: Pick an available iPhone simulator
+        run: |
+          set -euo pipefail
+          SIM_NAME=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          names = [
+              d["name"]
+              for runtime in devices
+              for d in devices[runtime]
+              if d.get("isAvailable") and d["name"].startswith("iPhone")
+          ]
+          print(names[0] if names else "")
+          ')
+          if [ -z "$SIM_NAME" ]; then
+            echo "No available iPhone simulator on this runner" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using simulator: $SIM_NAME"
+          echo "SIM_NAME=$SIM_NAME" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: |
+          set -euo pipefail
+          xcodebuild test -project Personal.xcodeproj -scheme Personal \
+            -destination "platform=iOS Simulator,name=$SIM_NAME" \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO | tee xcodebuild.log | tail -50
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xcodebuild-log
+          path: ios/xcodebuild.log
