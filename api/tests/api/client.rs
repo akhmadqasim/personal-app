@@ -109,7 +109,8 @@ impl Client {
     /// `pull` into the first response. Echo assertions need this because a single
     /// pull is capped at 500 rows across all tables.
     ///
-    /// A non-200 first response is returned untouched.
+    /// Any non-200 response is returned as-is and ends the walk, whether it is the
+    /// first page or a continuation.
     pub async fn sync_all(&self, since_seq: i64, push: Value) -> (StatusCode, Value) {
         let (status, mut body) = self.sync(since_seq, push).await;
         if status != StatusCode::OK {
@@ -118,7 +119,9 @@ impl Client {
         while body["has_more"].as_bool().unwrap_or(false) {
             let cursor = body["seq"].as_i64().expect("seq");
             let (page_status, page) = self.sync(cursor, json!({})).await;
-            assert_eq!(page_status, StatusCode::OK, "sync page failed: {page}");
+            if page_status != StatusCode::OK {
+                return (page_status, page);
+            }
             merge_page(&mut body, &page);
         }
         (status, body)

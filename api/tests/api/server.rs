@@ -24,25 +24,25 @@ impl DevServer {
         apply_migrations(root, &state);
 
         let port = free_port();
-        let child = Command::new(npx())
-            .args([
-                "wrangler",
-                "dev",
-                "--port",
-                &port.to_string(),
-                "--ip",
-                "127.0.0.1",
-                "--var",
-                &format!("API_TOKEN:{TOKEN}"),
-                "--persist-to",
-                &state.to_string_lossy(),
-                "--log-level",
-                "warn",
-            ])
-            .current_dir(root)
-            .stdin(Stdio::null())
-            .spawn()
-            .expect("failed to spawn wrangler dev");
+        let mut cmd = Command::new(npx());
+        cmd.args([
+            "wrangler",
+            "dev",
+            "--port",
+            &port.to_string(),
+            "--ip",
+            "127.0.0.1",
+            "--var",
+            &format!("API_TOKEN:{TOKEN}"),
+            "--persist-to",
+            &state.to_string_lossy(),
+            "--log-level",
+            "warn",
+        ])
+        .current_dir(root)
+        .stdin(Stdio::null());
+        configure_process_group(&mut cmd);
+        let child = cmd.spawn().expect("failed to spawn wrangler dev");
 
         let server = Self { child, port };
         server.wait_until_healthy(Duration::from_secs(300));
@@ -106,6 +106,19 @@ fn free_port() -> u16 {
         .port()
 }
 
+/// Gives the dev server its own process group so `kill_tree` can take down the
+/// `node`/`workerd` children `npx` spawns. Windows needs nothing here: `taskkill /T`
+/// walks the tree by pid instead.
+#[cfg(unix)]
+fn configure_process_group(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    cmd.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn configure_process_group(_cmd: &mut Command) {}
+
 #[cfg(windows)]
 fn kill_tree(child: &mut Child) {
     let _ = Command::new("taskkill")
@@ -116,8 +129,14 @@ fn kill_tree(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Kills the whole process group (negative pid), not just `npx`: killing `npx` alone
+/// leaves `wrangler` and `workerd` running.
 #[cfg(not(windows))]
 fn kill_tree(child: &mut Child) {
-    let _ = child.kill();
+    let _ = Command::new("kill")
+        .args(["-9", &format!("-{}", child.id())])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
     let _ = child.wait();
 }
