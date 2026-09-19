@@ -15,8 +15,12 @@ open Personal.xcodeproj
 
 Then in Xcode: select the `Personal` scheme and run (⌘R), or run the tests with ⌘U.
 
-Set your Team in Signing & Capabilities; on first launch open Settings and paste
-the API token.
+`xcodegen generate` resets `DEVELOPMENT_TEAM` — set your Team in Signing &
+Capabilities after each regenerate.
+
+First run: Settings (the gear on Today) → paste the API token → Sync now. The
+exercise catalog arrives with that first sync; until then the catalog screen is
+empty by design.
 
 ## Layout
 

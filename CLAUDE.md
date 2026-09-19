@@ -11,6 +11,12 @@ replicates each module's tables to the iOS app (offline-first, last-write-wins +
 - `cargo fmt --all && cargo clippy --all-targets -- -D warnings` — must pass before commit
 - Deploy: push to `main` (CI → D1 migrations → `wrangler deploy`)
 
+## Commands (run in `ios/`)
+- `brew install xcodegen` — once; the Xcode project is generated, never committed
+- `xcodegen generate` — rebuild `Personal.xcodeproj` after any `project.yml` or file change
+- `open Personal.xcodeproj` — then ⌘R to run, ⌘U to test
+- `xcodebuild test -project Personal.xcodeproj -scheme Personal -destination 'platform=iOS Simulator,name=iPhone 17'`
+
 ## Where things are
 - Specs `docs/specs/`, plans `docs/plans/`
 - Rules `.claude/rules/` — read before editing code
