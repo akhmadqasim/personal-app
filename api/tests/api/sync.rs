@@ -1,11 +1,13 @@
 //! POST /api/sync — push (LWW) and pull (seq cursor).
 
+use std::collections::HashSet;
+
 use libtest_mimic::Trial;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::client::{Client, Ctx, TOKEN, find_row};
-use crate::fixtures::{exercise, now_ms, uuid, workout_session, workout_set};
+use crate::fixtures::{exercise, now_ms, program, uuid, workout_session, workout_set};
 
 /// Adds this module's trials to the run.
 pub fn register(trials: &mut Vec<Trial>, ctx: &Ctx) {
@@ -32,6 +34,14 @@ pub fn register(trials: &mut Vec<Trial>, ctx: &Ctx) {
     trials.push(ctx.trial(
         "sync::missing_foreign_key_is_rejected",
         missing_foreign_key_is_rejected,
+    ));
+    trials.push(ctx.trial(
+        "sync::missing_foreign_key_rolls_back_siblings",
+        missing_foreign_key_rolls_back_siblings,
+    ));
+    trials.push(ctx.trial(
+        "sync::concurrent_pushes_never_duplicate_seq",
+        concurrent_pushes_never_duplicate_seq,
     ));
     trials.push(ctx.trial(
         "sync::child_and_parent_in_one_push",
@@ -64,7 +74,7 @@ async fn push_then_pull_returns_row(c: Client) {
 async fn cursor_excludes_older_rows(c: Client) {
     let a = uuid();
     let (_, first) = c
-        .sync(0, json!({ "exercise": [exercise(&a, "A", now_ms())] }))
+        .sync_all(0, json!({ "exercise": [exercise(&a, "A", now_ms())] }))
         .await;
     let cursor = first["seq"].as_i64().unwrap();
     let b = uuid();
@@ -177,6 +187,62 @@ async fn missing_foreign_key_is_rejected(c: Client) {
     assert_eq!(body["code"], "validation_failed");
 }
 
+/// The batch is atomic, so a dangling FK also rolls back the valid rows beside it.
+async fn missing_foreign_key_rolls_back_siblings(c: Client) {
+    let sibling = uuid();
+    let t = now_ms();
+    let set = workout_set(&uuid(), &uuid(), &sibling, t);
+    let (status, body) = c
+        .sync(
+            0,
+            json!({
+                "exercise": [exercise(&sibling, "Sibling", t)],
+                "workout_set": [set]
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+    let all = c.pull_all(0).await;
+    assert!(
+        find_row(&all, "exercise", &sibling).is_none(),
+        "the valid sibling row must roll back with the batch"
+    );
+}
+
+/// Two syncs racing on disjoint tables must never hand out the same `seq`: the loser's
+/// batch rolls back and reports 409 instead of committing a duplicate.
+async fn concurrent_pushes_never_duplicate_seq(c: Client) {
+    for _ in 0..5 {
+        let t = now_ms();
+        let other = c.clone();
+        let (left, right) = tokio::join!(
+            c.sync(0, json!({ "exercise": [exercise(&uuid(), "Race", t)] })),
+            other.sync(0, json!({ "program": [program(&uuid(), "Race", t)] })),
+        );
+        for (status, body) in [left, right] {
+            assert!(
+                status == StatusCode::OK || status == StatusCode::CONFLICT,
+                "expected 200 or 409, got {status}: {body}"
+            );
+        }
+    }
+    let all = c.pull_all(0).await;
+    let seqs: Vec<i64> = all
+        .as_object()
+        .unwrap()
+        .values()
+        .flat_map(|rows| rows.as_array().unwrap())
+        .map(|row| row["seq"].as_i64().unwrap())
+        .collect();
+    let unique: HashSet<i64> = seqs.iter().copied().collect();
+    assert_eq!(
+        unique.len(),
+        seqs.len(),
+        "seq values must be globally unique"
+    );
+}
+
 async fn child_and_parent_in_one_push(c: Client) {
     let ex = uuid();
     let session = uuid();
@@ -232,10 +298,18 @@ async fn paginates_with_has_more(c: Client) {
         .collect();
     let (status, first) = c.sync(0, json!({ "exercise": rows })).await;
     assert_eq!(status, StatusCode::OK, "{first}");
+    // A 501st row in its own push, so the trial does not rely on rows left by other trials.
+    let (status, extra) = c
+        .sync(
+            0,
+            json!({ "exercise": [exercise(&uuid(), "P500", now_ms())] }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{extra}");
     let (_, page) = c.sync(0, json!({})).await;
     assert_eq!(
         page["has_more"], true,
-        "500 pushed + seed rows must exceed one page"
+        "501 pushed rows must exceed one page"
     );
     let all = c.pull_all(0).await;
     let got = all["exercise"].as_array().unwrap();

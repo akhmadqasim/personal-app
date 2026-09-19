@@ -118,6 +118,16 @@ async fn apply_push(
     if statements.is_empty() {
         return Ok(last_seq);
     }
+    // D1 does not report the CAS below updating zero rows, so a concurrent sync that moved
+    // the cursor between `read_last_seq` and this batch would silently reuse seq numbers.
+    // The guard opens the batch and turns that into a primary-key clash, rolling everything
+    // back. It compares against the value we read, not the one we are about to write: two
+    // racing pushes of the same size compute the same new value, so checking the new value
+    // after the CAS would let the loser through.
+    statements.insert(
+        0,
+        db::prepare(db, sql::GUARD_LAST_SEQ, &[Value::from(last_seq)])?,
+    );
     statements.push(db::prepare(
         db,
         sql::WRITE_LAST_SEQ,

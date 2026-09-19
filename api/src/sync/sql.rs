@@ -10,6 +10,10 @@ pub const READ_LAST_SEQ: &str = "SELECT value FROM sync_meta WHERE key = 'last_s
 /// Advances the cursor only if nobody else did meanwhile (`?1` new, `?2` expected old).
 pub const WRITE_LAST_SEQ: &str =
     "UPDATE sync_meta SET value = ?1 WHERE key = 'last_seq' AND value = ?2";
+/// Fails the batch (duplicate primary key) when the CAS in [`WRITE_LAST_SEQ`] did not apply,
+/// so a concurrent sync rolls back instead of silently reusing seq numbers.
+pub const GUARD_LAST_SEQ: &str = "INSERT INTO sync_meta (key, value) SELECT 'last_seq', 0 \
+     WHERE (SELECT value FROM sync_meta WHERE key = 'last_seq') != ?1";
 
 fn column_names(table: &SyncTable) -> Vec<&'static str> {
     BASE_COLUMNS
