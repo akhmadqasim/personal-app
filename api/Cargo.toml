@@ -33,6 +33,7 @@ harness = false
 opt-level = "s"
 lto = true
 codegen-units = 1
+# Not `true`: that strips `target_features` too and breaks wasm-bindgen. See .claude/rules/rust.md
 strip = "debuginfo"
 
 [lints.rust]

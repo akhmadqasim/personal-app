@@ -10,7 +10,6 @@ replicates each module's tables to the iOS app (offline-first, last-write-wins +
 - `cargo test --test api` — integration tests (starts `wrangler dev` itself)
 - `cargo fmt --all && cargo clippy --all-targets -- -D warnings` — must pass before commit
 - Deploy: push to `main` (CI → D1 migrations → `wrangler deploy`)
-- Build note: `[profile.release] strip` must stay `"debuginfo"`, not `true`. `strip = true` drops the `target_features` custom section, and `wasm-bindgen` then fails with `externref table required for catch wrappers`.
 
 ## Where things are
 - Specs `docs/specs/`, plans `docs/plans/`

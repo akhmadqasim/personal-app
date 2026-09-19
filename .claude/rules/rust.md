@@ -6,3 +6,4 @@
 - One responsibility per file; a module folder is `mod.rs` (wiring) + focused files.
 - Doc comment on every public item. Comments explain why, not what.
 - Format + clippy pedantic clean before every commit.
+- `[profile.release] strip` stays `"debuginfo"`: `strip = true` also drops the `target_features` section, so `wasm-bindgen` loses `reference-types` and fails with `externref table required for catch wrappers`.
