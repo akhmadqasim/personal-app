@@ -23,10 +23,31 @@ jobs:
           xcodebuild -version
 
       # The macos-26 image ships Xcode 26 without the iOS simulator runtime, so
-      # every destination lookup fails until the platform is downloaded.
+      # every destination lookup fails until the platform is downloaded. The
+      # download talks to Apple's CDN and flakes ("Unable to connect to
+      # simulator.", exit 70), hence the retries. No `pipefail` here: `grep -q`
+      # exits early and would SIGPIPE `simctl` into a false negative.
       - name: Install the iOS simulator platform
         timeout-minutes: 20
-        run: sudo xcodebuild -downloadPlatform iOS
+        run: |
+          set -u
+          if xcrun simctl list runtimes | grep -q "iOS 26"; then
+            echo "iOS 26 runtime present"
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            echo "Downloading the iOS simulator platform (attempt $attempt/3)"
+            if sudo xcodebuild -downloadPlatform iOS; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Download failed; retrying in 30 s" >&2
+              sleep 30
+            fi
+          done
+          echo "Could not install the iOS simulator platform after 3 attempts" >&2
+          xcrun simctl list runtimes >&2
+          exit 1
 
       - name: Install XcodeGen
         run: brew install xcodegen
