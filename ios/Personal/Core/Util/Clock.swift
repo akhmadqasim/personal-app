@@ -9,13 +9,16 @@ import Synchronization
 ///
 /// `nowMs()` is `nonisolated` on purpose: the repository and the sync engine
 /// call it from database queues, far from the main actor.
-protocol Clock: Sendable {
+///
+/// Named `AppClock`, not `Clock`, so it does not shadow `Swift.Clock` — the
+/// sync scheduler debounces with `ContinuousClock`, which needs that name.
+protocol AppClock: Sendable {
     /// Milliseconds since 1970-01-01T00:00:00Z.
     nonisolated func nowMs() -> Int64
 }
 
 /// The real clock.
-nonisolated struct SystemClock: Clock {
+nonisolated struct SystemClock: AppClock {
     init() {}
 
     func nowMs() -> Int64 {
@@ -25,7 +28,7 @@ nonisolated struct SystemClock: Clock {
 
 /// A clock the tests move by hand. Thread-safe so it can be read from a
 /// database queue while the test sets it from the main actor.
-nonisolated final class FixedClock: Clock {
+nonisolated final class FixedClock: AppClock {
     private let storage: Mutex<Int64>
 
     init(_ milliseconds: Int64 = 0) {

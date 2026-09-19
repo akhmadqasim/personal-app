@@ -1,5 +1,3 @@
-import Foundation
-
 /// The muscle group an exercise trains — the API's `exercise.muscle_group`
 /// values, stored verbatim as TEXT.
 nonisolated enum MuscleGroup: String, Codable, Sendable, CaseIterable, Identifiable {

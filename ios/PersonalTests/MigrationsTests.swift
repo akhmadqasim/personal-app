@@ -79,10 +79,18 @@ struct MigrationsTests {
     }
 
     @Test func seqIsNullableSoOfflineRowsCanExist() throws {
-        // A row created offline has no server `seq` yet: writing one must not
-        // trip a NOT NULL or UNIQUE constraint.
-        let clock = FixedClock(1_000)
+        // The API declares `seq INTEGER NOT NULL UNIQUE`; locally the server
+        // owns that counter, so a row created offline has no `seq` until the
+        // first push. This checks the column really accepts NULL, and that two
+        // rows can sit there with `seq` unset at the same time.
         let database = try AppDatabase.inMemory()
+        for table in SyncedTable.allCases {
+            let nullable = try Migrations.nullableColumns(of: table.rawValue, in: database)
+            #expect(nullable.contains("seq"), "\(table.rawValue).seq must accept NULL")
+            #expect(nullable.contains("deleted_at"), "\(table.rawValue).deleted_at must accept NULL")
+        }
+
+        let clock = FixedClock(1_000)
         let repository = GymRepository(dbWriter: database, clock: clock)
 
         try repository.upsert(

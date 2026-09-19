@@ -25,9 +25,9 @@ nonisolated final class GymRepository: Sendable {
     /// Exposed so the sync engine and `ValueObservation.start(in:)` can reach
     /// the same connection; nothing else should query it directly.
     let dbWriter: any DatabaseWriter
-    let clock: any Clock
+    let clock: any AppClock
 
-    init(dbWriter: any DatabaseWriter, clock: any Clock = SystemClock()) {
+    init(dbWriter: any DatabaseWriter, clock: any AppClock = SystemClock()) {
         self.dbWriter = dbWriter
         self.clock = clock
     }
@@ -69,17 +69,25 @@ nonisolated final class GymRepository: Sendable {
 
     /// The catalog, optionally narrowed to one muscle group and/or a name
     /// search. Either filter is skipped when its argument is empty.
+    ///
+    /// `%`, `_` and the escape character itself are escaped in the search
+    /// term, so typing "100%" looks for that text instead of matching
+    /// everything.
     func exercises(muscleGroup: MuscleGroup? = nil, search: String = "") throws -> [Exercise] {
         let group = muscleGroup?.rawValue
         let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pattern: String? = trimmed.isEmpty ? nil : "%\(trimmed)%"
+        let escaped = trimmed
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+        let pattern: String? = trimmed.isEmpty ? nil : "%\(escaped)%"
         return try dbWriter.read { db in
             try Exercise
                 .filter(
                     sql: """
                         deleted_at IS NULL
                         AND (:group IS NULL OR muscle_group = :group)
-                        AND (:pattern IS NULL OR name LIKE :pattern)
+                        AND (:pattern IS NULL OR name LIKE :pattern ESCAPE '\\')
                         """,
                     arguments: ["group": group, "pattern": pattern])
                 .order(sql: "name COLLATE NOCASE")
@@ -198,6 +206,33 @@ nonisolated final class GymRepository: Sendable {
         }
     }
 
+    // MARK: - Sync support
+
+    // These two ignore `deleted_at` on purpose: a tombstone is exactly the
+    // kind of row the sync engine still has to push.
+
+    /// How many rows of `table` carry local changes, soft-deleted ones included.
+    func dirtyCount(of table: SyncedTable) throws -> Int {
+        try dbWriter.read { db in
+            let count = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM \(table.rawValue) WHERE dirty = 1")
+            return count ?? 0
+        }
+    }
+
+    /// The `updated_at` of one row, soft-deleted ones included, or `nil` when
+    /// the row is gone. The sync engine compares it with the value it pushed
+    /// to decide whether `dirty` may be cleared (spec §5).
+    func updatedAt(of table: SyncedTable, id: String) throws -> Int64? {
+        try dbWriter.read { db in
+            try Int64.fetchOne(
+                db,
+                sql: "SELECT updated_at FROM \(table.rawValue) WHERE id = ?",
+                arguments: [id])
+        }
+    }
+
     // MARK: - Writes
 
     /// Inserts or updates the exercise, stamping `updated_at` and `dirty`.
@@ -286,9 +321,13 @@ nonisolated final class GymRepository: Sendable {
     /// planned target set.
     ///
     /// Each set is prefilled from the last completed set of that exercise and,
-    /// failing that, from the plan target weight and reps (spec §6). Sets are
-    /// numbered with one running `position` across the whole session, so they
-    /// stay grouped per exercise in the order the day plans them.
+    /// failing that, from the plan target weight and reps (spec §6).
+    ///
+    /// `position` is one running counter across the **whole session**, not per
+    /// exercise: sorting by it groups the sets per exercise in the order the
+    /// day plans them, and adding a set later just appends. The Session screen
+    /// numbers the rows it draws ("#1", "#2") per exercise group, so `position`
+    /// is never shown to the user.
     @discardableResult
     func startSession(from day: ProgramDay?) throws -> WorkoutSession {
         let now = clock.nowMs()
@@ -336,6 +375,29 @@ nonisolated final class GymRepository: Sendable {
                 sql: """
                     UPDATE workout_session
                     SET finished_at = ?, updated_at = ?, dirty = 1
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [now, now, id])
+        }
+    }
+
+    /// Discards a session: soft-deletes it *and* every set that belongs to it,
+    /// in one transaction, so the history never keeps orphaned sets and the
+    /// sync engine pushes both tombstones together.
+    func discardSession(id: String) throws {
+        let now = clock.nowMs()
+        try dbWriter.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE workout_set
+                    SET deleted_at = ?, updated_at = ?, dirty = 1
+                    WHERE session_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [now, now, id])
+            try db.execute(
+                sql: """
+                    UPDATE workout_session
+                    SET deleted_at = ?, updated_at = ?, dirty = 1
                     WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [now, now, id])
@@ -429,8 +491,12 @@ nonisolated final class GymRepository: Sendable {
     // can reuse them without capturing `self`.
 
     private static func fetchActiveProgram(_ db: Database) throws -> Program? {
+        // A sync pull can land the new active program before the tombstone of
+        // the old flag, leaving two rows with `is_active = 1` for a moment.
+        // The most recently updated one is the one the user meant.
         try Program
             .filter(sql: "is_active = 1 AND deleted_at IS NULL")
+            .order(sql: "updated_at DESC")
             .fetchOne(db)
     }
 

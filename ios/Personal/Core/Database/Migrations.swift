@@ -49,6 +49,19 @@ nonisolated enum Migrations {
         }
     }
 
+    /// The columns of `table` that accept NULL (`PRAGMA table_info.notnull = 0`).
+    static func nullableColumns(of table: String, in reader: any DatabaseReader) throws -> [String] {
+        try reader.read { db in
+            let rows = try Row.fetchAll(db, sql: "PRAGMA table_info(\(table))")
+            return rows.compactMap { row -> String? in
+                let notNull: Int = row["notnull"]
+                guard notNull == 0 else { return nil }
+                let name: String = row["name"]
+                return name
+            }
+        }
+    }
+
     /// The whole `sync_state` table as a dictionary.
     static func syncState(in reader: any DatabaseReader) throws -> [String: Int64] {
         try reader.read { db in

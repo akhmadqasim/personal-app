@@ -123,6 +123,12 @@ struct GymRepositoryTests {
 
         let remaining = try repository.exercises()
         #expect(remaining.map(\.id) == ["e2"])
+
+        // The tombstone stays behind, stamped and dirty, so sync can push it.
+        let tombstoneUpdatedAt = try repository.updatedAt(of: .exercise, id: "e1")
+        #expect(tombstoneUpdatedAt == 2_000)
+        let dirty = try repository.dirtyCount(of: .exercise)
+        #expect(dirty == 2)
     }
 
     @Test func softDeletedSessionsDisappearFromHistory() throws {
@@ -138,6 +144,36 @@ struct GymRepositoryTests {
         #expect(history.isEmpty)
         let fetched = try repository.session(id: session.id)
         #expect(fetched == nil)
+    }
+
+    @Test func discardSessionAlsoSoftDeletesItsSets() throws {
+        let (repository, clock) = try makeRepository()
+        try seedProgram(repository, dayNames: ["Push A"], targetSets: 3)
+        let days = try repository.days(of: "p1")
+        let day = try #require(days.first)
+        let session = try repository.startSession(from: day)
+
+        let before = try repository.sets(of: session.id)
+        #expect(before.count == 3)
+
+        clock.set(base + 5_000)
+        try repository.discardSession(id: session.id)
+
+        let after = try repository.sets(of: session.id)
+        #expect(after.isEmpty)
+        let fetched = try repository.session(id: session.id)
+        #expect(fetched == nil)
+
+        // Session and sets are stamped with the same instant and stay dirty,
+        // so both tombstones travel in the next push.
+        let sessionUpdatedAt = try repository.updatedAt(of: .workoutSession, id: session.id)
+        #expect(sessionUpdatedAt == base + 5_000)
+        let setUpdatedAt = try repository.updatedAt(of: .workoutSet, id: before[0].id)
+        #expect(setUpdatedAt == base + 5_000)
+        let dirtySets = try repository.dirtyCount(of: .workoutSet)
+        #expect(dirtySets == 3)
+        let dirtySessions = try repository.dirtyCount(of: .workoutSession)
+        #expect(dirtySessions == 1)
     }
 
     // MARK: - Starting a session
@@ -329,6 +365,24 @@ struct GymRepositoryTests {
 
         let blankSearchIsIgnored = try repository.exercises(search: "   ")
         #expect(blankSearchIsIgnored.count == 3)
+    }
+
+    @Test func searchTreatsLikeWildcardsAsLiteralText() throws {
+        let (repository, _) = try makeRepository()
+        try repository.upsert(
+            Exercise(id: "e1", name: "Bench 100% press", muscleGroup: .chest, equipment: .barbell))
+        try repository.upsert(
+            Exercise(id: "e2", name: "Barbell row", muscleGroup: .back, equipment: .barbell))
+
+        let percent = try repository.exercises(search: "100%")
+        #expect(percent.map(\.id) == ["e1"])
+
+        // "%press" is a literal substring, not "anything then press".
+        let notAWildcard = try repository.exercises(search: "%press")
+        #expect(notAWildcard.isEmpty)
+
+        let underscore = try repository.exercises(search: "_")
+        #expect(underscore.isEmpty)
     }
 
     // MARK: - Progress
