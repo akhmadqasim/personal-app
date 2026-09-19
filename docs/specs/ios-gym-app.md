@@ -112,15 +112,26 @@ Deletes set `deleted_at` (soft) the same way. Reads always filter
    remember `(table, id, updated_at)` of what was pushed. Chunk in FK order too:
    a parent goes in the same or an earlier chunk than its children, because an
    FK violation is a 422 retrying cannot repair.
-2. `POST /api/sync { since_seq, push }`.
-3. On 200, in one write transaction:
-   - for each pulled row: if a local row exists with `dirty = 1` and
-     `local.updated_at > incoming.updated_at` → keep local; otherwise write the
-     incoming row with `dirty = 0` and its `seq`;
-   - for each pushed row whose `updated_at` is unchanged since the snapshot →
-     `dirty = 0`;
-   - `since_seq = response.seq`.
-4. Loop while `has_more` or dirty rows remain (max 20 iterations per run).
+2. `POST /api/sync { since_seq, push }` — the network phase writes nothing.
+   The cursor lives in memory (`since_seq = response.seq` for the next request)
+   and the pulled pages are collected. Loop, at most 20 round trips per run,
+   while the server answers `has_more` or dirty rows are still unsent.
+3. Then one write transaction for the whole run:
+   - strict attempt: `PRAGMA defer_foreign_keys = ON`, pulled rows table by
+     table in FK order — the server pages by `seq` and an edited parent gets a
+     new one, so a child can arrive a page before its parent. Per row: if a
+     local row exists with `dirty = 1` and `local.updated_at >
+     incoming.updated_at` → keep local; otherwise write the incoming row with
+     `dirty = 0` and its `seq`;
+   - if that transaction fails, retry it once in lenient mode: immediate
+     foreign keys and one savepoint per row, so a row the database refuses (a
+     missing NOT NULL column, an orphan) is skipped and logged instead of
+     wedging the cursor on that page for every future run;
+   - in the same transaction: `dirty = 0` for each pushed row whose
+     `updated_at` is unchanged since the snapshot, then `since_seq` = the last
+     response's `seq` and `last_synced_at = now`.
+4. A failure in either phase writes nothing at all: the cursor stays where it
+   was and the next trigger retries the same pages.
 5. Errors: 401 → status `error("Check your API token in Settings")`; 409 →
    retry after 1 s, up to 3 times; 422 → status error with the first message
    (should never happen; rows stay dirty); network/5xx → status error, rows
