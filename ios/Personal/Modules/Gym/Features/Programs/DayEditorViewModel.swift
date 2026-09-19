@@ -171,17 +171,17 @@ final class DayEditorViewModel {
     }
 
     /// The `List`'s `.onMove`, same rule as the days: renumber from zero,
-    /// write back only what moved.
+    /// write back only what moved, all of it in one transaction.
     func move(fromOffsets source: IndexSet, toOffset destination: Int) {
         var reordered = records
         reordered.move(fromOffsets: source, toOffset: destination)
+        var updates: [(id: String, position: Int)] = []
+        for index in reordered.indices where reordered[index].position != index {
+            updates.append((id: reordered[index].id, position: index))
+        }
+        guard updates.isEmpty == false else { return }
         do {
-            for index in reordered.indices {
-                var planned = reordered[index]
-                guard planned.position != index else { continue }
-                planned.position = index
-                try repository.upsert(planned)
-            }
+            try repository.updatePositions(.programExercise, positions: updates)
             scheduler?.trigger(.afterWrite)
             reload()
         } catch {

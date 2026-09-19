@@ -1,34 +1,7 @@
 import Foundation
-import Synchronization
 import Testing
 
 @testable import Personal
-
-/// A ``TokenStore`` that keeps the token in memory.
-///
-/// The real one writes to the simulator's keychain, which every test in the
-/// run shares and which survives between runs — a save test against it would
-/// leak into the next suite.
-nonisolated final class InMemoryTokenStore: TokenStore {
-
-    private let storage: Mutex<String?>
-
-    init(_ token: String? = nil) {
-        self.storage = Mutex(token)
-    }
-
-    func token() -> String? {
-        storage.withLock { $0 }
-    }
-
-    func setToken(_ token: String) throws {
-        storage.withLock { $0 = token }
-    }
-
-    func deleteToken() {
-        storage.withLock { $0 = nil }
-    }
-}
 
 /// A client pointed at a host nothing answers on; the tests that use it never
 /// make a request.

@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// Where a push from the exercise catalog can land.
+///
+/// The catalog owns this rather than borrowing ``ProgramsRoute``: it registers
+/// the destination itself, so it works in a `#Preview` and would work from any
+/// other stack that pushes it later.
+nonisolated enum ExercisesRoute: Hashable, Sendable {
+    case exercise(String)
+}
+
 /// The exercise catalog (spec §6, design §4): a muscle-group chip row, a
 /// search field and rows drawn on the muscle-group `Soft` tile — or the user's
 /// own photo once there is one.
@@ -36,6 +45,12 @@ struct ExerciseListView: View {
         .navigationTitle("Exercises")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .navigationDestination(for: ExercisesRoute.self) { route in
+            switch route {
+            case .exercise(let exerciseId):
+                ExerciseDetailView(environment: environment, exerciseId: exerciseId)
+            }
+        }
         .searchable(text: $model.search, prompt: "Search exercises")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -74,7 +89,7 @@ struct ExerciseListView: View {
         } else {
             VStack(alignment: .leading, spacing: Theme.Spacing.rowSpacing) {
                 ForEach(model.rows) { row in
-                    NavigationLink(value: ProgramsRoute.exercise(row.id)) {
+                    NavigationLink(value: ExercisesRoute.exercise(row.id)) {
                         exerciseRow(row)
                     }
                     .buttonStyle(.plain)

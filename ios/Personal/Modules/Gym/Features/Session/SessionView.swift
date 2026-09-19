@@ -204,107 +204,23 @@ struct SessionView: View {
 
 // MARK: - Discard
 
-/// The discard confirmation (spec §6): a ``SheetHeader`` and a capsule the
-/// user drags to the end. A destructive action that deletes a whole session
-/// deserves more than a tap that can be made by accident.
+/// The discard confirmation (spec §6): the shared ``SlideToConfirmSheet`` with
+/// the session's own words. It stays a named view so the call site reads as
+/// what it does, not as a pile of strings.
 struct DiscardSessionSheet: View {
 
     var onConfirm: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    /// 0 at rest, 1 at the far end; ≥ 0.9 on release confirms.
-    @State private var progress: CGFloat = 0
-
-    /// Design §3: a red "Slide to confirm" capsule, 48 pt, arrow knob.
-    private static let trackHeight: CGFloat = 48
-    private static let knobSize: CGFloat = 40
-    private static let confirmAt: CGFloat = 0.9
 
     init(onConfirm: @escaping () -> Void) {
         self.onConfirm = onConfirm
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            SheetHeader(
-                symbol: "trash",
-                title: "Discard session",
-                subtitle: "The session and all of its sets are removed, here and on every synced device.",
-                onClose: { dismiss() })
-
-            GeometryReader { proxy in
-                slider(width: proxy.size.width)
-            }
-            .frame(height: Self.trackHeight)
-
-            Spacer(minLength: 0)
-        }
-        .padding(Theme.Spacing.cardPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Colors.canvas)
-        .presentationDetents([.height(300)])
-        .presentationCornerRadius(Theme.Radius.sheet)
-    }
-
-    private func slider(width: CGFloat) -> some View {
-        let travel = max(1, width - Self.knobSize - Theme.Spacing.sm)
-        return ZStack(alignment: .leading) {
-            Capsule()
-                .fill(Theme.Colors.dangerSoft)
-            Text("Slide to confirm")
-                .font(Theme.Typography.headline)
-                .foregroundStyle(Theme.Colors.danger)
-                .frame(maxWidth: .infinity)
-                .opacity(1 - Double(progress))
-                .allowsHitTesting(false)
-            knob
-                .offset(x: Theme.Spacing.xs + progress * travel)
-                .gesture(drag(travel: travel))
-        }
-        .frame(height: Self.trackHeight)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Discard session")
-        .accessibilityHint("Slide to the end to confirm")
-        .accessibilityAddTraits(.isButton)
-        // VoiceOver cannot drag; a double tap has to do it.
-        .accessibilityAction {
-            confirm()
-        }
-    }
-
-    private var knob: some View {
-        Circle()
-            .fill(Theme.Colors.danger)
-            .frame(width: Self.knobSize, height: Self.knobSize)
-            .overlay {
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.white)
-            }
-    }
-
-    private func drag(travel: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                progress = min(1, max(0, value.translation.width / travel))
-            }
-            .onEnded { _ in
-                if progress >= Self.confirmAt {
-                    progress = 1
-                    confirm()
-                } else {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        progress = 0
-                    }
-                }
-            }
-    }
-
-    private func confirm() {
-        Haptics.success()
-        onConfirm()
-        dismiss()
+        SlideToConfirmSheet(
+            symbol: "trash",
+            title: "Discard session",
+            message: "The session and all of its sets are removed, here and on every synced device.",
+            onConfirm: onConfirm)
     }
 }
 

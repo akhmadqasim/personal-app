@@ -72,11 +72,13 @@ final class AppEnvironment {
     }
 
     /// An empty in-memory environment for `#Preview`s and tests: same
-    /// migrations, nothing written to disk.
+    /// migrations, nothing written to disk — and no keychain either, so a
+    /// preview never picks up the real bearer token and never talks to the
+    /// live API.
     static func preview() -> AppEnvironment {
         do {
             let database = try AppDatabase.inMemory()
-            return AppEnvironment(dbWriter: database)
+            return AppEnvironment(dbWriter: database, tokenStore: InMemoryTokenStore())
         } catch {
             fatalError("Personal could not open an in-memory database: \(error)")
         }

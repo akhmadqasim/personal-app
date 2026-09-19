@@ -90,6 +90,61 @@ struct ProgramsViewModelTests {
         model.delete(programId)
 
         #expect(model.programs.isEmpty)
+        #expect(model.toast?.kind == .success)
+    }
+
+    @Test func deletingTheOnlyProgramLeavesNoActiveOne() throws {
+        let (repository, _) = try makeProgramsFixture()
+        let model = ProgramsViewModel(repository: repository)
+        let programId = try #require(model.createProgram(name: "Push Pull Legs"))
+
+        model.delete(programId)
+
+        let active = try repository.activeProgram()
+        #expect(active == nil)
+    }
+
+    @Test func deletingTheActiveProgramPromotesTheMostRecentlyUpdatedOne() throws {
+        let (repository, clock) = try makeProgramsFixture()
+        let model = ProgramsViewModel(repository: repository)
+        // The first one created is the active one.
+        let activeId = try #require(model.createProgram(name: "Push Pull Legs"))
+        clock.advance(by: 1000)
+        model.createProgram(name: "Upper Lower")
+        clock.advance(by: 1000)
+        model.createProgram(name: "Bro Split")
+
+        model.delete(activeId)
+
+        #expect(model.programs.count == 2)
+        let active = model.programs.filter(\.isActive)
+        #expect(active.count == 1)
+        #expect(active[0].name == "Bro Split")
+    }
+
+    @Test func deletingAnInactiveProgramLeavesTheFlagWhereItIs() throws {
+        let (repository, clock) = try makeProgramsFixture()
+        let model = ProgramsViewModel(repository: repository)
+        model.createProgram(name: "Push Pull Legs")
+        clock.advance(by: 1000)
+        let sparedId = try #require(model.createProgram(name: "Upper Lower"))
+
+        model.delete(sparedId)
+
+        let active = model.programs.filter(\.isActive)
+        #expect(active.count == 1)
+        #expect(active[0].name == "Push Pull Legs")
+    }
+
+    @Test func aDeletionSheetIsDismissedOnceTheDeleteLands() throws {
+        let (repository, _) = try makeProgramsFixture()
+        let model = ProgramsViewModel(repository: repository)
+        let programId = try #require(model.createProgram(name: "Push Pull Legs"))
+        model.pendingDeletion = model.programs.first
+
+        model.delete(programId)
+
+        #expect(model.pendingDeletion == nil)
     }
 
     @Test func theRowMetaCountsDaysAndPlannedExercises() throws {
@@ -197,6 +252,49 @@ struct ProgramsViewModelTests {
         #expect(model.days[0].name == "Pull")
         let dirty = try repository.dirtyCount(of: .programDay)
         #expect(dirty == 2)
+    }
+
+    // MARK: - The repository's reorder transaction
+
+    @Test func updatePositionsStampsEveryRowWithTheSameInstant() throws {
+        let (repository, clock) = try makeProgramsFixture()
+        let program = try repository.createProgram(name: "Push Pull Legs")
+        try repository.upsert(
+            ProgramDay(id: "d0", programId: program.id, name: "Push", position: 0))
+        try repository.upsert(
+            ProgramDay(id: "d1", programId: program.id, name: "Pull", position: 1))
+        clock.advance(by: 500)
+
+        try repository.updatePositions(
+            .programDay,
+            positions: [(id: "d1", position: 0), (id: "d0", position: 1)])
+
+        let stored = try repository.days(of: program.id)
+        #expect(stored.count == 2)
+        #expect(stored[0].id == "d1")
+        #expect(stored[1].id == "d0")
+        #expect(stored[0].updatedAt == programsBase + 500)
+        #expect(stored[1].updatedAt == programsBase + 500)
+        #expect(stored[0].dirty)
+        #expect(stored[1].dirty)
+    }
+
+    @Test func updatePositionsIgnoresAnEmptyListAndDeletedRows() throws {
+        let (repository, clock) = try makeProgramsFixture()
+        let program = try repository.createProgram(name: "Push Pull Legs")
+        try repository.upsert(
+            ProgramDay(id: "d0", programId: program.id, name: "Push", position: 0))
+        try repository.softDelete(.programDay, id: "d0")
+        let deletedAtStamp = try repository.updatedAt(of: .programDay, id: "d0")
+        clock.advance(by: 500)
+
+        try repository.updatePositions(.programDay, positions: [])
+        try repository.updatePositions(.programDay, positions: [(id: "d0", position: 3)])
+
+        // The tombstone keeps the instant it was made; a reorder must not
+        // resurrect it into a new push.
+        let after = try repository.updatedAt(of: .programDay, id: "d0")
+        #expect(after == deletedAtStamp)
     }
 
     // MARK: - The day editor
@@ -309,6 +407,27 @@ struct ProgramsViewModelTests {
         #expect(model.rows.isEmpty)
         let planned = try repository.programExercises(of: dayId)
         #expect(planned.isEmpty)
+    }
+
+    @Test func clearingTheTargetWeightWritesNil() throws {
+        let (repository, _) = try makeProgramsFixture()
+        let exercise = makeBenchPress()
+        try repository.upsert(exercise)
+        let program = try repository.createProgram(name: "Push Pull Legs")
+        let detail = ProgramDetailViewModel(programId: program.id, repository: repository)
+        detail.reload()
+        let dayId = try #require(detail.addDay(name: "Push A"))
+        let model = DayEditorViewModel(dayId: dayId, repository: repository)
+        model.reload()
+        let rowId = try #require(model.addExercise(exercise))
+        model.updateTargets(rowId, sets: 3, reps: 10, weightKg: 60, restSeconds: 90)
+
+        model.updateTargets(rowId, sets: 3, reps: 10, weightKg: nil, restSeconds: 90)
+
+        let planned = try repository.programExercises(of: dayId)
+        let first = try #require(planned.first)
+        #expect(first.targetWeightKg == nil)
+        #expect(model.rows[0].detail == "3 × 10 · 90 s")
     }
 
     @Test func renamingADayWritesItBack() throws {

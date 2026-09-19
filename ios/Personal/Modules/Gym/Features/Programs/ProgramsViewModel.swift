@@ -37,6 +37,8 @@ final class ProgramsViewModel {
     /// Drives the "new program" sheet.
     var isCreating = false
     var newName = ""
+    /// The row whose slide-to-confirm deletion sheet is up.
+    var pendingDeletion: ProgramRow?
 
     let imageStore: ImageStore?
 
@@ -129,13 +131,42 @@ final class ProgramsViewModel {
     /// Soft delete, so the tombstone reaches the server (spec §5). The days
     /// underneath keep their rows: nothing reads a day whose program is gone,
     /// and cascading tombstones is the server's job, not a screen's.
+    ///
+    /// Deleting the *active* program hands the flag on rather than leaving the
+    /// app with none: Today would otherwise fall back to "No program yet" and
+    /// invite the user to build a second one they already have.
     func delete(_ programId: String) {
         do {
+            let wasActive = try repository.program(id: programId)?.isActive ?? false
             try repository.softDelete(.program, id: programId)
+            if wasActive {
+                if let successor = try mostRecentlyUpdatedProgram() {
+                    try repository.setActiveProgram(id: successor.id)
+                }
+            }
             scheduler?.trigger(.afterWrite)
+            pendingDeletion = nil
             reload()
+            toast = .success("Program deleted")
         } catch {
             toast = .error("Could not delete the program.")
         }
+    }
+
+    /// The live program the user touched last — the best guess at the one they
+    /// meant to keep training. `nil` when the deleted program was the only one,
+    /// which correctly leaves the app with no active program at all.
+    private func mostRecentlyUpdatedProgram() throws -> Program? {
+        var newest: Program?
+        for candidate in try repository.programs() {
+            guard let current = newest else {
+                newest = candidate
+                continue
+            }
+            if candidate.updatedAt > current.updatedAt {
+                newest = candidate
+            }
+        }
+        return newest
     }
 }

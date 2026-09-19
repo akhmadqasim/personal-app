@@ -28,7 +28,14 @@ struct TargetEditorSheet: View {
         _sets = State(initialValue: min(10, max(1, row.targetSets)))
         _reps = State(initialValue: min(50, max(1, row.targetReps)))
         _hasWeight = State(initialValue: row.targetWeightKg != nil)
-        _weightText = State(initialValue: WeightFormat.plain(row.targetWeightKg ?? 0))
+        // Empty, not "0", when the plan carries no weight: a prefilled zero
+        // reads as "lift nothing" and would be saved as a real target the
+        // moment the toggle is flipped on.
+        var initialWeight = ""
+        if let stored = row.targetWeightKg {
+            initialWeight = WeightFormat.plain(stored)
+        }
+        _weightText = State(initialValue: initialWeight)
         _hasRest = State(initialValue: row.restSeconds != nil)
         _rest = State(initialValue: Self.snapped(row.restSeconds ?? 90))
     }
@@ -149,13 +156,19 @@ struct TargetEditorSheet: View {
     // MARK: - Saving
 
     /// Accepts both decimal separators: a German keyboard types "57,5".
+    ///
+    /// The toggle being on is not enough to write a weight — the field has to
+    /// hold a number. Left empty it saves `nil`, which is what lets a new
+    /// session keep prefilling from the last set the user completed.
     private func save() {
         var weight: Double?
         if hasWeight {
             let normalised = weightText
                 .replacingOccurrences(of: ",", with: ".")
                 .trimmingCharacters(in: .whitespaces)
-            weight = max(0, Double(normalised) ?? 0)
+            if let parsed = Double(normalised) {
+                weight = max(0, parsed)
+            }
         }
         onSave(sets, reps, weight, hasRest ? rest : nil)
         dismiss()

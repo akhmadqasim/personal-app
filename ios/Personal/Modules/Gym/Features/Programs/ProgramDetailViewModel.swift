@@ -104,16 +104,20 @@ final class ProgramDetailViewModel {
     /// The `List`'s `.onMove`: renumbers `position` from zero and writes back
     /// only the days that actually moved, so a no-op drag does not dirty every
     /// row for the sync engine.
+    ///
+    /// The writes go through ``GymRepository/updatePositions(_:positions:)``,
+    /// one transaction for the whole drag: half a reorder is a program with
+    /// two days claiming the same slot.
     func move(fromOffsets source: IndexSet, toOffset destination: Int) {
         var reordered = records
         reordered.move(fromOffsets: source, toOffset: destination)
+        var updates: [(id: String, position: Int)] = []
+        for index in reordered.indices where reordered[index].position != index {
+            updates.append((id: reordered[index].id, position: index))
+        }
+        guard updates.isEmpty == false else { return }
         do {
-            for index in reordered.indices {
-                var day = reordered[index]
-                guard day.position != index else { continue }
-                day.position = index
-                try repository.upsert(day)
-            }
+            try repository.updatePositions(.programDay, positions: updates)
             scheduler?.trigger(.afterWrite)
             reload()
         } catch {

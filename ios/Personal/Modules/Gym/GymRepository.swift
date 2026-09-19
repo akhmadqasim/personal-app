@@ -576,6 +576,39 @@ nonisolated final class GymRepository: Sendable {
         }
     }
 
+    /// Renumbers the `position` of several rows of one table in a single
+    /// transaction, stamping `updated_at` and `dirty` the way every other
+    /// write does.
+    ///
+    /// A drag in the program or day editor moves every row below the one that
+    /// was picked up. Writing them one `upsert` at a time opens one
+    /// transaction per row, and a sync pull landing between two of them can
+    /// leave the program with two days claiming the same slot. One
+    /// transaction makes the reorder atomic and hands the sync engine a batch
+    /// of rows that all changed at the same instant.
+    ///
+    /// Rows that are missing or already soft-deleted are skipped by the
+    /// `WHERE`, so a stale index costs nothing and a tombstone is never
+    /// restamped back into the push queue.
+    func updatePositions(
+        _ table: SyncedTable,
+        positions: [(id: String, position: Int)]
+    ) throws {
+        guard positions.isEmpty == false else { return }
+        let now = clock.nowMs()
+        try dbWriter.write { db in
+            for item in positions {
+                try db.execute(
+                    sql: """
+                        UPDATE \(table.rawValue)
+                        SET position = ?, updated_at = ?, dirty = 1
+                        WHERE id = ? AND deleted_at IS NULL
+                        """,
+                    arguments: [item.position, now, item.id])
+            }
+        }
+    }
+
     /// Points an exercise at a freshly uploaded photo, or clears it with `nil`.
     func setImageKey(exerciseId: String, key: String?) throws {
         let now = clock.nowMs()

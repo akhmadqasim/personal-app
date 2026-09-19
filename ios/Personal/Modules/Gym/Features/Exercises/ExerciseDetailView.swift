@@ -1,3 +1,4 @@
+import Photos
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -25,6 +26,11 @@ final class ExerciseDetailViewModel {
     /// leaves the background plain `canvas` (spec §7).
     private(set) var ambientImage: UIImage?
     private(set) var hasPhoto = false
+    /// Cached rather than read on every `canUploadPhoto` access: the getter
+    /// runs inside `body`, and a `SecItemCopyMatching` per render is a
+    /// synchronous trip into the Security framework for an answer that only
+    /// changes when the user visits Settings. ``refreshToken()`` re-reads it.
+    private(set) var hasToken = false
     private(set) var isUploading = false
     /// Set when the exercise is gone; the screen pops.
     private(set) var isGone = false
@@ -72,6 +78,18 @@ final class ExerciseDetailViewModel {
         notes = found.notes
         art = ExerciseArt(found)
         hasPhoto = Self.isCustomPhoto(found.imageKey)
+        refreshToken()
+    }
+
+    /// Re-reads the keychain. The screen calls it on appear and whenever the
+    /// scene comes back, which is when a token could have been pasted into
+    /// Settings behind this page's back.
+    func refreshToken() {
+        guard let token = tokenStore.token() else {
+            hasToken = false
+            return
+        }
+        hasToken = token.isEmpty == false
     }
 
     func loadAmbientImage() async {
@@ -111,11 +129,6 @@ final class ExerciseDetailViewModel {
             return "Sync is failing right now. Fix that first, then try again."
         }
         return nil
-    }
-
-    private var hasToken: Bool {
-        guard let token = tokenStore.token() else { return false }
-        return token.isEmpty == false
     }
 
     private var isSyncFailing: Bool {
@@ -175,7 +188,11 @@ struct ExerciseDetailView: View {
 
     @State private var model: ExerciseDetailViewModel
     @State private var photoItem: PhotosPickerItem?
+    /// The library pick, loaded and uploaded outside SwiftUI's own task
+    /// lifetime — see ``handlePickedPhoto(_:)``.
+    @State private var photoTask: Task<Void, Never>?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     init(environment: AppEnvironment, exerciseId: String) {
         self.environment = environment
@@ -223,6 +240,16 @@ struct ExerciseDetailView: View {
         .task {
             model.load()
         }
+        .onAppear {
+            model.refreshToken()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // A token pasted into Settings while this page was backgrounded
+            // has to unlock the photo buttons on the way back.
+            if phase == .active {
+                model.refreshToken()
+            }
+        }
         .task(id: model.art) {
             await model.loadAmbientImage()
         }
@@ -252,10 +279,17 @@ struct ExerciseDetailView: View {
                 })
             .ignoresSafeArea()
         }
-        // `task(id:)` rather than `onChange`: loading the bytes is async and
-        // this way a second pick cancels the first.
-        .task(id: photoItem) {
-            await loadPickedPhoto()
+        // Deliberately *not* a `.task(id: photoItem)`: that task is owned by
+        // the identity it watches, so clearing `photoItem` at the end of the
+        // flow would cancel the very upload that is still in flight and the
+        // `PUT` would come back as `URLError.cancelled`. An unstructured task
+        // owned by the view outlives the binding it was started from.
+        .onChange(of: photoItem) { _, newValue in
+            guard let newValue else { return }
+            photoTask?.cancel()
+            photoTask = Task {
+                await handlePickedPhoto(newValue)
+            }
         }
     }
 
@@ -359,19 +393,19 @@ struct ExerciseDetailView: View {
 
     /// `PhotosPickerItem` hands back bytes; `UIImage` is built here, on the
     /// main actor, because it is not `Sendable`.
-    private func loadPickedPhoto() async {
-        guard let photoItem else { return }
-        let data = try? await photoItem.loadTransferable(type: Data.self)
-        self.photoItem = nil
-        guard let data else {
-            model.toast = .error("Could not read that photo.")
-            return
-        }
-        guard let image = UIImage(data: data) else {
+    ///
+    /// `photoItem` is cleared only once the upload has finished, so the
+    /// picker cannot hand back the same asset twice and nothing cancels the
+    /// request halfway through.
+    private func handlePickedPhoto(_ item: PhotosPickerItem) async {
+        let data = try? await item.loadTransferable(type: Data.self)
+        guard let data, let image = UIImage(data: data) else {
+            photoItem = nil
             model.toast = .error("Could not read that photo.")
             return
         }
         await model.upload(image)
+        photoItem = nil
     }
 }
 

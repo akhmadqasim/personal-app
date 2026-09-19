@@ -7,7 +7,6 @@ nonisolated enum ProgramsRoute: Hashable, Sendable {
     case program(String)
     case day(String)
     case exercises
-    case exercise(String)
 }
 
 /// The Programs tab (spec §6, design §4): the programs as event rows, a "+"
@@ -64,6 +63,15 @@ struct ProgramsView: View {
                 destination(route)
             }
         }
+        .sheet(item: $model.pendingDeletion) { row in
+            SlideToConfirmSheet(
+                symbol: "trash",
+                title: "Delete \(row.name)",
+                message: "The program and its days are removed here and on every synced device. Sessions you already logged stay in your history.",
+                onConfirm: {
+                    model.delete(row.id)
+                })
+        }
         .sheet(isPresented: $model.isCreating) {
             NewProgramSheet(name: $model.newName) {
                 if let programId = model.createProgram(name: model.newName) {
@@ -92,16 +100,17 @@ struct ProgramsView: View {
         case .day(let dayId):
             DayEditorView(environment: environment, dayId: dayId)
         case .exercises:
+            // The catalog registers its own destination for the entry it
+            // pushes, so it stands up on its own in a preview.
             ExerciseListView(environment: environment)
-        case .exercise(let exerciseId):
-            ExerciseDetailView(environment: environment, exerciseId: exerciseId)
         }
     }
 
     // MARK: - Pieces
 
     private var title: some View {
-        Text("Programs")
+        // The brand glyph leads every tab root (design §3 "Header").
+        Text("✦ Programs")
             .font(Theme.Typography.largeTitle)
             .tracking(Theme.Typography.largeTitleTracking)
             .foregroundStyle(Theme.Colors.textPrimary)
@@ -135,7 +144,7 @@ struct ProgramsView: View {
                         }
                         .disabled(row.isActive)
                         Button(role: .destructive) {
-                            model.delete(row.id)
+                            model.pendingDeletion = row
                         } label: {
                             Label("Delete program", systemImage: "trash")
                         }
