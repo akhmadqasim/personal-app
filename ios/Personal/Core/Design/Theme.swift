@@ -17,6 +17,10 @@ enum Theme {
         static let canvas = Color(light: 0xF5_F5_F3, dark: 0x0A_0A_0A)
         static let surface = Color(light: 0xFF_FF_FF, dark: 0xFF_FF_FF, darkAlpha: 0.08)
         static let surfaceSecondary = Color(light: 0xEF_EF_ED, dark: 0xFF_FF_FF, darkAlpha: 0.12)
+        /// The selected segment of the pill segmented control: white in light
+        /// mode, white 16 % in dark (spec §3) — one step brighter than the
+        /// `surfaceSecondary` track it sits on, which `surface` (8 %) is not.
+        static let surfaceSelected = Color(light: 0xFF_FF_FF, dark: 0xFF_FF_FF, darkAlpha: 0.16)
         static let hairline = Color(light: 0xE8_E8_E6, dark: 0xFF_FF_FF, darkAlpha: 0.10)
 
         // Text
@@ -96,6 +100,23 @@ enum Theme {
         static let thumb: CGFloat = 12
         static let input: CGFloat = 12
         static let sheet: CGFloat = 28
+
+        /// Pills, chips and the tab bar have radius ∞ (spec §2). Components
+        /// draw them with `Capsule()` rather than a number — this constant
+        /// exists only for the rare shape that has to be built from a radius,
+        /// and must then be clamped (`min(pill, height / 2)`).
+        static let pill: CGFloat = .infinity
+    }
+
+    // MARK: - Elevation
+
+    /// Cards carry no shadow in light mode; only floating chrome does, and
+    /// only as the fallback for Liquid Glass (spec §2: 0 0 24 pt, 8 % black).
+    enum Elevation {
+        static let floatingColor = Color.black.opacity(0.08)
+        static let floatingRadius: CGFloat = 24
+        static let floatingX: CGFloat = 0
+        static let floatingY: CGFloat = 0
     }
 
     // MARK: - Muscle-group accents
@@ -164,5 +185,19 @@ fileprivate extension Color {
                 ? themeUIColor(dark, darkAlpha)
                 : themeUIColor(light, lightAlpha)
         })
+    }
+}
+
+// MARK: - Elevation helper
+
+extension View {
+    /// The fallback shadow for floating chrome where Liquid Glass is not used
+    /// (spec §2: x 0, y 0, blur 24 pt, 8 % black). Cards never call it.
+    func floatingShadow() -> some View {
+        shadow(
+            color: Theme.Elevation.floatingColor,
+            radius: Theme.Elevation.floatingRadius,
+            x: Theme.Elevation.floatingX,
+            y: Theme.Elevation.floatingY)
     }
 }

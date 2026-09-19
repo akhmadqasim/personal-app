@@ -96,10 +96,15 @@ private func exerciseJSON(id: String, updatedAt: Int64, seq: Int64, name: String
 }
 
 /// One pulled program row.
-private func programJSON(id: String, updatedAt: Int64, seq: Int64) -> String {
+private func programJSON(
+    id: String,
+    updatedAt: Int64,
+    seq: Int64,
+    name: String = "Push Pull Legs"
+) -> String {
     """
     {"id":"\(id)","updated_at":\(updatedAt),"deleted_at":null,"seq":\(seq),
-     "name":"Push Pull Legs","is_active":1}
+     "name":"\(name)","is_active":1}
     """
 }
 
@@ -123,7 +128,7 @@ struct SyncEngineTests {
 
         stack.server.enqueue(#"{"seq":7,"has_more":false,"pull":{}}"#)
         let outcome = await stack.engine.sync()
-        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 1))
+        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 1, skipped: 0))
 
         let request = try #require(stack.server.requests.first)
         let body = try decodePush(request)
@@ -150,7 +155,7 @@ struct SyncEngineTests {
         stack.server.enqueue(#"{"seq":1,"has_more":false,"pull":{}}"#)
         stack.server.enqueue(#"{"seq":2,"has_more":false,"pull":{}}"#)
         let outcome = await stack.engine.sync()
-        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 551))
+        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 551, skipped: 0))
 
         let requests = stack.server.requests
         #expect(requests.count == 2)
@@ -180,7 +185,7 @@ struct SyncEngineTests {
         stack.server.enqueue(#"{"seq":9,"has_more":false,"pull":{"exercise":[\#(pulled)]}}"#)
 
         let outcome = await stack.engine.sync()
-        #expect(outcome == SyncOutcome.success(pulled: 1, pushed: 0))
+        #expect(outcome == SyncOutcome.success(pulled: 1, pushed: 0, skipped: 0))
 
         let stored = try #require(stack.repository.exercise(id: "e1"))
         #expect(stored.name == "Bench press (server)")
@@ -197,7 +202,7 @@ struct SyncEngineTests {
         stack.server.enqueue(#"{"seq":3,"has_more":false,"pull":{"exercise":[\#(pulled)]}}"#)
 
         let outcome = await stack.engine.sync()
-        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 1))
+        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 1, skipped: 0))
 
         let stored = try #require(stack.repository.exercise(id: "e1"))
         #expect(stored.name == "Bench press")
@@ -230,7 +235,7 @@ struct SyncEngineTests {
         stack.server.enqueue(#"{"seq":4,"has_more":false,"pull":{}}"#)
 
         let outcome = await stack.engine.sync()
-        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 2))
+        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 2, skipped: 0))
 
         let edited = try #require(stack.repository.exercise(id: "e1"))
         let untouched = try #require(stack.repository.exercise(id: "e2"))
@@ -242,9 +247,13 @@ struct SyncEngineTests {
     // MARK: - Cursor
 
     /// The server pages by `seq` across all tables, and editing a parent gives
-    /// it a new `seq`, so a child can arrive a page *before* its parent. The
-    /// engine must follow the cursor and still apply both without tripping a
-    /// foreign key.
+    /// it a new `seq`, so a child can arrive a page *before* its parent.
+    ///
+    /// What this pins down is the accumulation: pages are collected across the
+    /// whole run and applied once, in foreign-key order, so the parent reaches
+    /// the table first however late it arrived. Applying page by page would
+    /// fail on page 1 with `FOREIGN KEY constraint failed` and never move the
+    /// cursor past it.
     @Test func appliesAChildFromAnEarlierPageThanItsParent() async throws {
         let stack = try makeStack()
         let day = programDayJSON(id: "d1", programId: "p1", updatedAt: 100, seq: 10)
@@ -253,7 +262,7 @@ struct SyncEngineTests {
         stack.server.enqueue(#"{"seq":20,"has_more":false,"pull":{"program":[\#(program)]}}"#)
 
         let outcome = await stack.engine.sync()
-        #expect(outcome == SyncOutcome.success(pulled: 2, pushed: 0))
+        #expect(outcome == SyncOutcome.success(pulled: 2, pushed: 0, skipped: 0))
 
         let requests = stack.server.requests
         #expect(requests.count == 2)
@@ -272,6 +281,52 @@ struct SyncEngineTests {
         #expect(state["since_seq"] == 20)
     }
 
+    /// An orphan row cannot be inserted at all, in any order. The strict
+    /// transaction fails at commit, the lenient retry drops that one row and
+    /// commits everything else — otherwise the cursor would stick on this page
+    /// and every later run would fail on it again.
+    @Test func skipsARowTheDatabaseRefusesAndKeepsTheRest() async throws {
+        let stack = try makeStack()
+        let exercise = exerciseJSON(id: "e1", updatedAt: 100, seq: 29, name: "Bench press")
+        let orphan = programDayJSON(id: "d1", programId: "missing", updatedAt: 100, seq: 30)
+        stack.server.enqueue(
+            #"{"seq":30,"has_more":false,"pull":{"exercise":[\#(exercise)],"program_day":[\#(orphan)]}}"#)
+
+        let outcome = await stack.engine.sync()
+        #expect(outcome == SyncOutcome.success(pulled: 1, pushed: 0, skipped: 1))
+
+        let exercises = try stack.repository.exercises()
+        let days = try stack.repository.days(of: "missing")
+        #expect(exercises.count == 1)
+        #expect(days.isEmpty)
+
+        let state = try Migrations.syncState(in: stack.database)
+        #expect(state["since_seq"] == 30)
+    }
+
+    /// `INSERT OR REPLACE` deletes the old parent row before inserting the new
+    /// one; the children referencing it must survive that.
+    @Test func replacesAParentThatHasLocalChildren() async throws {
+        let stack = try makeStack()
+        try stack.repository.upsert(Program(id: "p1", name: "Push Pull Legs"))
+        try stack.repository.upsert(
+            ProgramDay(id: "d1", programId: "p1", name: "Push", position: 0))
+        try clearDirty(stack.database, table: "program", id: "p1")
+        try clearDirty(stack.database, table: "program_day", id: "d1")
+
+        let program = programJSON(
+            id: "p1", updatedAt: base + 1_000, seq: 8, name: "Push Pull Legs (server)")
+        stack.server.enqueue(#"{"seq":8,"has_more":false,"pull":{"program":[\#(program)]}}"#)
+
+        let outcome = await stack.engine.sync()
+        #expect(outcome == SyncOutcome.success(pulled: 1, pushed: 0, skipped: 0))
+
+        let programs = try stack.repository.programs()
+        let days = try stack.repository.days(of: "p1")
+        #expect(programs.first?.name == "Push Pull Legs (server)")
+        #expect(days.count == 1)
+    }
+
     // MARK: - Conflicts
 
     @Test func retriesAConflictAndSucceeds() async throws {
@@ -281,7 +336,7 @@ struct SyncEngineTests {
         stack.server.enqueue(#"{"seq":5,"has_more":false,"pull":{}}"#)
 
         let outcome = await stack.engine.sync()
-        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 0))
+        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 0, skipped: 0))
         #expect(stack.server.requests.count == 3)
     }
 
@@ -305,7 +360,7 @@ struct SyncEngineTests {
         stack.server.enqueue(#"{"seq":42,"has_more":false,"pull":{}}"#)
 
         let outcome = await stack.engine.sync()
-        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 0))
+        #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 0, skipped: 0))
 
         let state = try Migrations.syncState(in: stack.database)
         #expect(state["since_seq"] == 42)

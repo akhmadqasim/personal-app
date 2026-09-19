@@ -4,9 +4,9 @@ import os
 
 /// What one `SyncEngine.sync()` run ended in.
 nonisolated enum SyncOutcome: Equatable, Sendable {
-    /// Rows written locally and rows sent, summed over every round trip of the
-    /// run.
-    case success(pulled: Int, pushed: Int)
+    /// Rows written locally, rows sent, and rows the server offered that could
+    /// not be written — summed over the whole run.
+    case success(pulled: Int, pushed: Int, skipped: Int)
     /// The run stopped early. Nothing was applied, the cursor did not move and
     /// dirty rows stay dirty; the next trigger retries.
     case failure(ApiError)
@@ -19,12 +19,12 @@ nonisolated enum SyncOutcome: Equatable, Sendable {
 /// `[String: JSONValue]`, so the engine knows the table names (``SyncedTable``,
 /// in foreign-key order) but never a single column name.
 ///
-/// The network round trips run first and collect their pages in memory; the
-/// database is written once, at the end, in a single transaction. The server
-/// pages by `seq` across all tables, and an edited parent is given a *new*
-/// `seq`, so a child can perfectly well arrive one page before its parent —
-/// applying page by page would hit a foreign-key error, roll back, and leave
-/// the cursor stuck on that page forever.
+/// A run is two phases. The network round trips come first and collect their
+/// pages in memory; the database is written once, at the end, in a single
+/// transaction. The server pages by `seq` across all tables, and an edited
+/// parent is given a *new* `seq`, so a child can perfectly well arrive one page
+/// before its parent — applying page by page would hit a foreign-key error,
+/// roll back, and leave the cursor stuck on that page forever.
 actor SyncEngine {
 
     /// The server's push limit (`gym-tracker.md` §5); a larger body is a 413.
@@ -79,6 +79,8 @@ actor SyncEngine {
             cursor = try await dbWriter.read { database in
                 try SyncSQL.sinceSeq(database)
             }
+        } catch is CancellationError {
+            return .failure(.network("Sync was cancelled"))
         } catch {
             return .failure(.server("Could not read the local database"))
         }
@@ -97,6 +99,8 @@ actor SyncEngine {
                 batch = try await dbWriter.read { database in
                     try SyncSQL.snapshot(database, limit: limit, skip: skip)
                 }
+            } catch is CancellationError {
+                return .failure(.network("Sync was cancelled"))
             } catch {
                 return .failure(.server("Could not read the local database"))
             }
@@ -107,7 +111,7 @@ actor SyncEngine {
             } catch let error as ApiError {
                 return .failure(error)
             } catch is CancellationError {
-                return .failure(.network("The sync was cancelled"))
+                return .failure(.network("Sync was cancelled"))
             } catch {
                 return .failure(.network(error.localizedDescription))
             }
@@ -115,8 +119,10 @@ actor SyncEngine {
             cursor = response.seq
             pushedTotal += batch.count
             snapshot.append(contentsOf: batch.snapshot)
-            for (name, rows) in batch.rows {
-                taken[name, default: 0] += rows.count
+            // Count what the query returned, which is what the next `OFFSET`
+            // has to step over — not what survived the guards below it.
+            for (name, count) in batch.fetched {
+                taken[name, default: 0] += count
             }
             for (name, rows) in response.pull where rows.isEmpty == false {
                 pulled[name, default: []].append(contentsOf: rows)
@@ -127,25 +133,58 @@ actor SyncEngine {
             }
         }
 
+        return await apply(pulled: pulled, snapshot: snapshot, cursor: cursor, pushed: pushedTotal)
+    }
+
+    /// Writes the whole run.
+    ///
+    /// The first attempt is strict: deferred foreign keys, all or nothing, so a
+    /// child pulled before its parent is fine as long as the parent is in the
+    /// same run. When that transaction fails — a parent dropped for a missing
+    /// column leaves its child dangling, say — the second attempt is lenient:
+    /// immediate foreign keys and one savepoint per row, so a row that cannot
+    /// be written is skipped instead of wedging every future run on the same
+    /// page.
+    private func apply(
+        pulled: [String: [JSONRow]],
+        snapshot: [PushedRow],
+        cursor: Int64,
+        pushed: Int
+    ) async -> SyncOutcome {
         let now = clock.nowMs()
-        let incoming = pulled
-        let sent = snapshot
-        let finalCursor = cursor
-        let applied: Int
         do {
-            applied = try await dbWriter.write { database in
+            let result = try await dbWriter.write { database in
                 try SyncSQL.apply(
-                    pulled: incoming,
-                    snapshot: sent,
-                    cursor: finalCursor,
+                    pulled: pulled,
+                    snapshot: snapshot,
+                    cursor: cursor,
                     now: now,
+                    lenient: false,
                     in: database)
             }
+            return .success(pulled: result.applied, pushed: pushed, skipped: result.skipped)
+        } catch is CancellationError {
+            return .failure(.network("Sync was cancelled"))
+        } catch {
+            SyncSQL.logger.error("Strict apply failed; retrying row by row")
+        }
+
+        do {
+            let result = try await dbWriter.write { database in
+                try SyncSQL.apply(
+                    pulled: pulled,
+                    snapshot: snapshot,
+                    cursor: cursor,
+                    now: now,
+                    lenient: true,
+                    in: database)
+            }
+            return .success(pulled: result.applied, pushed: pushed, skipped: result.skipped)
+        } catch is CancellationError {
+            return .failure(.network("Sync was cancelled"))
         } catch {
             return .failure(.server("Could not write the local database"))
         }
-
-        return .success(pulled: applied, pushed: pushedTotal)
     }
 
     /// One `POST /api/sync`, retrying a 409 after ``retryDelay`` because the
@@ -180,11 +219,34 @@ private nonisolated struct PushBatch: Sendable {
     var rows: [String: [JSONRow]]
     /// The same rows as `(table, id, updated_at)` triples.
     var snapshot: [PushedRow]
-    /// How many rows this chunk holds.
+    /// Rows the chunk query returned per table, including any the conversion
+    /// then dropped. This is what the next chunk's `OFFSET` steps over.
+    var fetched: [String: Int]
+    /// How many rows this chunk sends.
     var count: Int
     /// How many dirty rows the database held when the chunk was read; the run
     /// keeps going until at least that many have been sent.
     var dirtyTotal: Int
+}
+
+/// What one write transaction did.
+private nonisolated struct ApplyResult: Sendable {
+    /// Rows written locally.
+    var applied: Int
+    /// Rows the server offered that could not be written: a missing `NOT NULL`
+    /// column, or a per-row failure in lenient mode. A row that simply lost the
+    /// last-writer-wins check is not counted — nothing went wrong there.
+    var skipped: Int
+}
+
+/// What happened to one pulled row.
+private nonisolated enum RowOutcome: Sendable {
+    /// Written to the table.
+    case written
+    /// The local row was newer and dirty, so it stays.
+    case keptLocal
+    /// The row could not be written at all.
+    case dropped
 }
 
 /// Columns of one table: what may be written, and what must be present.
@@ -222,6 +284,7 @@ private nonisolated enum SyncSQL {
     static func snapshot(_ db: Database, limit: Int, skip: [String: Int]) throws -> PushBatch {
         var rows: [String: [JSONRow]] = [:]
         var pushed: [PushedRow] = []
+        var fetchedCounts: [String: Int] = [:]
         var budget = limit
 
         for table in SyncedTable.allCases {
@@ -236,6 +299,10 @@ private nonisolated enum SyncSQL {
                     ORDER BY updated_at, id
                     LIMIT \(budget) OFFSET \(offset)
                     """)
+            if fetched.isEmpty { continue }
+            fetchedCounts[name] = fetched.count
+            budget -= fetched.count
+
             var wire: [JSONRow] = []
             wire.reserveCapacity(fetched.count)
             for row in fetched {
@@ -247,11 +314,15 @@ private nonisolated enum SyncSQL {
             }
             if wire.isEmpty { continue }
             rows[name] = wire
-            budget -= wire.count
         }
 
         let total = try dirtyRowCount(db)
-        return PushBatch(rows: rows, snapshot: pushed, count: pushed.count, dirtyTotal: total)
+        return PushBatch(
+            rows: rows,
+            snapshot: pushed,
+            fetched: fetchedCounts,
+            count: pushed.count,
+            dirtyTotal: total)
     }
 
     /// How many rows still carry local changes, across every synced table.
@@ -268,32 +339,45 @@ private nonisolated enum SyncSQL {
 
     // MARK: - Writing
 
-    /// Applies a whole run inside the caller's transaction and returns how many
-    /// rows were written.
+    /// Applies a whole run inside the caller's transaction.
     ///
-    /// Everything happens here and nowhere else, so a failure leaves the
-    /// database exactly as it was: the cursor stays put and the next run asks
-    /// for the same pages again.
+    /// Strict mode (`lenient == false`) defers the foreign-key checks to the
+    /// commit, so the run is all or nothing: a failure leaves the database
+    /// exactly as it was, the cursor stays put and the next run asks for the
+    /// same pages again. Lenient mode checks foreign keys immediately and wraps
+    /// every row in a savepoint, so one impossible row costs only itself.
     static func apply(
         pulled: [String: [JSONRow]],
         snapshot: [PushedRow],
         cursor: Int64,
         now: Int64,
+        lenient: Bool,
         in db: Database
-    ) throws -> Int {
-        // Belt to the foreign-key ordering below: within this transaction a
-        // child may reference a parent that is inserted a few statements later.
-        // The constraints are still checked, at commit.
-        try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
+    ) throws -> ApplyResult {
+        if lenient == false {
+            // Within this transaction a child may reference a parent that is
+            // inserted a few statements later. The constraints are still
+            // checked, at commit.
+            try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
+        }
 
         var applied = 0
+        var skipped = 0
         for table in SyncedTable.allCases {
             guard let rows = pulled[table.rawValue] else { continue }
             if rows.isEmpty { continue }
-            let schema = try tableSchema(db, table: table.rawValue)
+            let name = table.rawValue
+            let schema = try tableSchema(db, table: name)
             for row in rows {
-                let written = try applyPulled(row, table: table.rawValue, schema: schema, in: db)
-                if written { applied += 1 }
+                let outcome = try applyRow(row, table: name, schema: schema, lenient: lenient, in: db)
+                switch outcome {
+                case .written:
+                    applied += 1
+                case .dropped:
+                    skipped += 1
+                case .keptLocal:
+                    break
+                }
             }
         }
 
@@ -306,7 +390,32 @@ private nonisolated enum SyncSQL {
         }
 
         try writeState(db, sinceSeq: cursor, now: now)
-        return applied
+        return ApplyResult(applied: applied, skipped: skipped)
+    }
+
+    /// One pulled row, wrapped in a savepoint when the caller asked for
+    /// leniency so a failure costs only this row.
+    static func applyRow(
+        _ row: JSONRow,
+        table: String,
+        schema: TableSchema,
+        lenient: Bool,
+        in db: Database
+    ) throws -> RowOutcome {
+        if lenient == false {
+            return try applyPulled(row, table: table, schema: schema, in: db)
+        }
+        var outcome = RowOutcome.dropped
+        do {
+            try db.inSavepoint {
+                outcome = try applyPulled(row, table: table, schema: schema, in: db)
+                return .commit
+            }
+        } catch {
+            logger.error("Skipped an incoming \(table, privacy: .public) row the database refused")
+            return .dropped
+        }
+        return outcome
     }
 
     /// Last-writer-wins for one pulled row: a dirty local row that is newer
@@ -315,25 +424,26 @@ private nonisolated enum SyncSQL {
     /// `INSERT OR REPLACE` deletes the old row before inserting the new one,
     /// which is safe here: SQLite checks foreign keys at the end of the
     /// statement — and, with `defer_foreign_keys`, of the transaction — by
-    /// which time the same id is back in the table.
+    /// which time the same id is back in the table, so children of a replaced
+    /// parent survive.
     static func applyPulled(
         _ row: JSONRow,
         table: String,
         schema: TableSchema,
         in db: Database
-    ) throws -> Bool {
-        guard let id = row["id"]?.text else { return false }
-        guard let incomingUpdatedAt = row["updated_at"]?.intValue else { return false }
+    ) throws -> RowOutcome {
+        guard let id = row["id"]?.text else { return .dropped }
+        guard let incomingUpdatedAt = row["updated_at"]?.intValue else { return .dropped }
 
-        // A row missing a `NOT NULL` column would abort the whole apply, which
-        // would wedge the cursor. Dropping that one row is recoverable: the
-        // server sends it again after the next edit.
+        // A row missing a `NOT NULL` column cannot be inserted at all. Dropping
+        // that one row is recoverable: the server sends it again after the next
+        // edit.
         for column in schema.required {
             let value = row[column]
             if value == nil || value == JSONValue.null {
                 logger.error(
                     "Skipped an incoming \(table, privacy: .public) row missing \(column, privacy: .public)")
-                return false
+                return .dropped
             }
         }
 
@@ -344,13 +454,13 @@ private nonisolated enum SyncSQL {
         if let local {
             let localUpdatedAt: Int64 = local["updated_at"]
             let localDirty: Int64 = local["dirty"]
-            if localDirty == 1 && localUpdatedAt > incomingUpdatedAt { return false }
+            if localDirty == 1 && localUpdatedAt > incomingUpdatedAt { return .keptLocal }
         }
 
         // Unknown columns are dropped rather than failing the whole batch: the
         // server may run one migration ahead of this build.
         let names = row.keys.filter { schema.columns.contains($0) && $0 != "dirty" }.sorted()
-        if names.isEmpty { return false }
+        if names.isEmpty { return .dropped }
         let columnList = names.joined(separator: ", ")
         let placeholders = names.map { _ in "?" }.joined(separator: ", ")
         let values = names.map { databaseValue(from: row[$0] ?? .null) }
@@ -358,7 +468,7 @@ private nonisolated enum SyncSQL {
         try db.execute(
             sql: "INSERT OR REPLACE INTO \(table) (\(columnList), dirty) VALUES (\(placeholders), 0)",
             arguments: StatementArguments(values))
-        return true
+        return .written
     }
 
     /// Stores the pull cursor and the time of this run.
