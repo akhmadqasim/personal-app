@@ -45,6 +45,7 @@ targets:
     sources: [PersonalTests]
     dependencies:
       - target: Personal
+      - package: GRDB
 schemes:
   Personal:
     build:
