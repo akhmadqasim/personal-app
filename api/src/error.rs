@@ -29,8 +29,6 @@ pub enum ApiError {
     /// 413
     PayloadTooLarge(String),
     /// 415
-    // Constructed by the image upload handler (Task 10).
-    #[allow(dead_code)]
     UnsupportedMediaType(String),
     /// 422
     Validation(Vec<FieldError>),

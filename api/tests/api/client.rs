@@ -1,6 +1,4 @@
 //! HTTP client and trial builder shared by all integration tests.
-// `get_raw` and `put_bytes` are consumed by the image tests (Task 10).
-#![allow(dead_code)]
 
 use std::future::Future;
 use std::sync::Arc;

@@ -1,6 +1,7 @@
 //! Gym module: training catalog, programs and workout logs.
 
 mod export;
+mod images;
 pub mod tables;
 mod validate;
 
@@ -10,9 +11,16 @@ pub use tables::TABLES;
 
 use crate::router::respond;
 
-/// Extra HTTP routes owned by this module (images added later).
+/// Extra HTTP routes owned by this module.
 pub fn routes(router: Router<'_, ()>) -> Router<'_, ()> {
-    router.get_async("/api/gym/export", |req, ctx| async move {
-        respond(export::handle(req, ctx).await)
-    })
+    router
+        .get_async("/api/gym/export", |req, ctx| async move {
+            respond(export::handle(req, ctx).await)
+        })
+        .put_async("/api/gym/exercises/:id/image", |req, ctx| async move {
+            respond(images::upload(req, ctx).await)
+        })
+        .get_async("/api/gym/images/*key", |req, ctx| async move {
+            respond(images::serve(req, ctx).await)
+        })
 }
