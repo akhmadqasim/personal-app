@@ -187,7 +187,8 @@ struct SyncEngineTests {
         let outcome = await stack.engine.sync()
         #expect(outcome == SyncOutcome.success(pulled: 1, pushed: 0, skipped: 0))
 
-        let stored = try #require(stack.repository.exercise(id: "e1"))
+        let found = try stack.repository.exercise(id: "e1")
+        let stored = try #require(found)
         #expect(stored.name == "Bench press (server)")
         #expect(stored.updatedAt == 2_000)
         #expect(stored.seq == 9)
@@ -204,7 +205,8 @@ struct SyncEngineTests {
         let outcome = await stack.engine.sync()
         #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 1, skipped: 0))
 
-        let stored = try #require(stack.repository.exercise(id: "e1"))
+        let found = try stack.repository.exercise(id: "e1")
+        let stored = try #require(found)
         #expect(stored.name == "Bench press")
         #expect(stored.updatedAt == 5_000)
     }
@@ -237,8 +239,10 @@ struct SyncEngineTests {
         let outcome = await stack.engine.sync()
         #expect(outcome == SyncOutcome.success(pulled: 0, pushed: 2, skipped: 0))
 
-        let edited = try #require(stack.repository.exercise(id: "e1"))
-        let untouched = try #require(stack.repository.exercise(id: "e2"))
+        let first = try stack.repository.exercise(id: "e1")
+        let second = try stack.repository.exercise(id: "e2")
+        let edited = try #require(first)
+        let untouched = try #require(second)
         #expect(edited.dirty)
         #expect(edited.updatedAt == 1_500)
         #expect(untouched.dirty == false)
