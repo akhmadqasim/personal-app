@@ -1,0 +1,7 @@
+{
+  "name": "personal-api",
+  "private": true,
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

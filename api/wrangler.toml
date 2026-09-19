@@ -1,0 +1,21 @@
+name = "personal-api"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-09-19"
+workers_dev = false
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+[[routes]]
+pattern = "api.akhmadqasim.com"
+custom_domain = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "personal-api"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "personal-api-images"
