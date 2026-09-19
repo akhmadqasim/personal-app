@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use libtest_mimic::Trial;
 use reqwest::StatusCode;
@@ -19,9 +20,15 @@ pub struct Client {
 
 impl Client {
     /// Builds a client for `base`, e.g. `http://127.0.0.1:8787`.
+    ///
+    /// Every request has a deadline: a wedged dev server must fail the trial that hit it
+    /// rather than park the whole suite until CI kills the job.
     pub fn new(base: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(60))
+                .build()
+                .expect("build http client"),
             base: base.to_owned(),
         }
     }
