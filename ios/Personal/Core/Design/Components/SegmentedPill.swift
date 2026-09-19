@@ -10,6 +10,8 @@ struct SegmentedPill: View {
 
     @Namespace private var namespace
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     init(selection: Binding<Int>, labels: [String]) {
         self._selection = selection
         self.labels = labels
@@ -27,7 +29,9 @@ struct SegmentedPill: View {
 
     private func segment(_ index: Int) -> some View {
         Button {
-            withAnimation(.snappy(duration: 0.25)) {
+            // Reduce Motion: the selected capsule cuts to the new segment
+            // instead of sliding across (design §5).
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                 selection = index
             }
             Haptics.selection()

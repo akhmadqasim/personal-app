@@ -13,9 +13,8 @@ nonisolated enum RootTab: Hashable, Sendable {
 /// The appearance is the system Liquid Glass tab bar tinted with `ink`; it
 /// minimises as the content scrolls down (iOS 26) and content scrolls beneath it.
 ///
-/// Progress is a placeholder until task 7; Today's empty state switches to
-/// Programs through ``selection``, which is why the tab choice lives here
-/// rather than inside `TabView`'s own storage.
+/// Today's empty state switches to Programs through ``selection``, which is
+/// why the tab choice lives here rather than inside `TabView`'s own storage.
 struct RootTabView: View {
 
     @Environment(AppEnvironment.self) private var environment
@@ -33,22 +32,11 @@ struct RootTabView: View {
                 ProgramsView(environment: environment)
             }
             Tab("Progress", systemImage: "chart.line.uptrend.xyaxis", value: RootTab.progress) {
-                NavigationStack {
-                    placeholder("Progress — Task 7")
-                        .navigationTitle("Progress")
-                }
+                ProgressTabView(environment: environment)
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .tint(Theme.Colors.ink)
-    }
-
-    private func placeholder(_ text: String) -> some View {
-        Text(text)
-            .font(Theme.Typography.secondary)
-            .foregroundStyle(Theme.Colors.textSecondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.Colors.canvas)
     }
 }
 

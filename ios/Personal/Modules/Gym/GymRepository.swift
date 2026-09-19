@@ -9,6 +9,27 @@ nonisolated struct BestSet: Sendable, Equatable {
     var weightKg: Double
 }
 
+/// One week of training volume for one exercise, for the Progress bars.
+nonisolated struct WeeklyVolume: Sendable, Equatable {
+    /// Monday 00:00 UTC of that ISO week, in milliseconds since the epoch —
+    /// the x axis and the identity of the bucket.
+    var weekStartMs: Int64
+    /// Σ `weight_kg × reps` of the completed sets logged that week.
+    var volumeKg: Double
+}
+
+/// The heaviest completed set of one exercise inside a window, with the day
+/// it was logged — the Progress "Best set" tile.
+///
+/// Separate from ``BestSet``, which is one point of the line chart and
+/// carries no reps: the tile prints "65 kg × 8", the chart does not.
+nonisolated struct PersonalBest: Sendable, Equatable {
+    var weightKg: Double
+    var reps: Int
+    /// `started_at` of the session it belongs to, in milliseconds.
+    var sessionStartedAt: Int64
+}
+
 /// Every gym read and write goes through here.
 ///
 /// Two invariants hold for the whole app (spec §5):
@@ -238,6 +259,124 @@ nonisolated final class GymRepository: Sendable {
             }
         }
     }
+
+    /// Training volume per ISO week for one exercise over the last `weeks`
+    /// weeks, oldest first — the Progress bar chart.
+    ///
+    /// Volume is `Σ weight_kg × reps` over **completed** sets only: a set that
+    /// was planned but never ticked off was never lifted.
+    ///
+    /// Weeks are bucketed arithmetically rather than with `strftime`: the
+    /// integer division below needs nothing beyond plain SQLite maths, while
+    /// `%V` (ISO week) only exists in SQLite 3.46 and later and `%Y-%W` breaks
+    /// across new year. Weeks start Monday 00:00 UTC — the ISO boundary.
+    /// A user in a far-east timezone can see a Monday-morning session land in
+    /// the previous bucket; the bars are a trend, not an accounting ledger.
+    func weeklyVolume(exerciseId: String, weeks: Int = 12) throws -> [WeeklyVolume] {
+        let cutoff = clock.nowMs() - Int64(weeks) * Self.weekMs
+        return try dbWriter.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT ((ss.started_at - :anchor) / :week) AS week_index,
+                           SUM(s.weight_kg * s.reps) AS volume
+                    FROM workout_set s
+                    JOIN workout_session ss ON ss.id = s.session_id
+                    WHERE s.exercise_id = :exercise
+                      AND s.completed = 1
+                      AND s.deleted_at IS NULL
+                      AND ss.deleted_at IS NULL
+                      AND ss.started_at >= :cutoff
+                    GROUP BY week_index
+                    ORDER BY week_index
+                    """,
+                arguments: [
+                    "anchor": Self.mondayAnchorMs,
+                    "week": Self.weekMs,
+                    "exercise": exerciseId,
+                    "cutoff": cutoff,
+                ])
+            return rows.map { row in
+                let index: Int64 = row["week_index"]
+                let volume: Double? = row["volume"]
+                return WeeklyVolume(
+                    weekStartMs: index * Self.weekMs + Self.mondayAnchorMs,
+                    volumeKg: volume ?? 0)
+            }
+        }
+    }
+
+    /// The exercises the user actually trained in the last `weeks` weeks,
+    /// heaviest total volume first — the chips row of the Progress tab.
+    ///
+    /// An exercise with no completed set in the window is absent, so an empty
+    /// result is exactly "nothing logged yet" and the tab can say so.
+    /// Ties break on the name, so the chips do not reshuffle between reloads.
+    func topExercisesByVolume(limit: Int = 6, weeks: Int = 12) throws -> [Exercise] {
+        let cutoff = clock.nowMs() - Int64(weeks) * Self.weekMs
+        return try dbWriter.read { db in
+            try Exercise.fetchAll(
+                db,
+                sql: """
+                    SELECT e.*
+                    FROM exercise e
+                    JOIN workout_set s ON s.exercise_id = e.id
+                    JOIN workout_session ss ON ss.id = s.session_id
+                    WHERE e.deleted_at IS NULL
+                      AND s.completed = 1
+                      AND s.deleted_at IS NULL
+                      AND ss.deleted_at IS NULL
+                      AND ss.started_at >= :cutoff
+                    GROUP BY e.id
+                    ORDER BY SUM(s.weight_kg * s.reps) DESC, e.name COLLATE NOCASE
+                    LIMIT :limit
+                    """,
+                arguments: ["cutoff": cutoff, "limit": limit])
+        }
+    }
+
+    /// The heaviest completed set of one exercise in the window, with the day
+    /// it was logged — the Progress "Best set" tile. `nil` when the exercise
+    /// has no completed set in there.
+    ///
+    /// Ties on weight break on the reps, then on the most recent session: of
+    /// two 100 kg sets the one with more reps is the better lift, and of two
+    /// identical ones the fresher is the more encouraging.
+    func personalBest(exerciseId: String, weeks: Int = 12) throws -> PersonalBest? {
+        let cutoff = clock.nowMs() - Int64(weeks) * Self.weekMs
+        return try dbWriter.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT s.weight_kg AS weight_kg,
+                           s.reps AS reps,
+                           ss.started_at AS started_at
+                    FROM workout_set s
+                    JOIN workout_session ss ON ss.id = s.session_id
+                    WHERE s.exercise_id = :exercise
+                      AND s.completed = 1
+                      AND s.deleted_at IS NULL
+                      AND ss.deleted_at IS NULL
+                      AND ss.started_at >= :cutoff
+                    ORDER BY s.weight_kg DESC, s.reps DESC, ss.started_at DESC
+                    LIMIT 1
+                    """,
+                arguments: ["exercise": exerciseId, "cutoff": cutoff])
+            guard let row else { return nil }
+            let weightKg: Double = row["weight_kg"]
+            let reps: Int = row["reps"]
+            let startedAt: Int64 = row["started_at"]
+            return PersonalBest(weightKg: weightKg, reps: reps, sessionStartedAt: startedAt)
+        }
+    }
+
+    /// Milliseconds in one week.
+    static let weekMs: Int64 = 7 * 24 * 60 * 60 * 1000
+
+    /// 1970-01-05T00:00:00Z, the first Monday after the epoch — the origin
+    /// every week bucket is measured from. The epoch itself is a Thursday, so
+    /// dividing raw timestamps by a week would put the boundary on Thursdays.
+    static let mondayAnchorMs: Int64 = 4 * 24 * 60 * 60 * 1000
 
     // MARK: - Sync support
 

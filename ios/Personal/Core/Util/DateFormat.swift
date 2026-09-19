@@ -32,6 +32,12 @@ enum DateFormat {
         shortDateFormatter.string(from: date(ms))
     }
 
+    /// "8 Sep" — the compact day a chart axis label has room for, where the
+    /// full month name of ``dayHeader(_:)`` would collide with its neighbours.
+    static func dayMonthShort(_ ms: Int64) -> String {
+        dayMonthShortFormatter.string(from: date(ms))
+    }
+
     /// The clock time of a session, in the user's own 12/24-hour setting.
     static func time(_ ms: Int64) -> String {
         timeFormatter.string(from: date(ms))
@@ -76,6 +82,13 @@ enum DateFormat {
     private static let dayMonthFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("dMMMM")
+        return formatter
+    }()
+
+    /// "8 Sep" — the template lets the locale decide the order.
+    private static let dayMonthShortFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("dMMM")
         return formatter
     }()
 
