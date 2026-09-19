@@ -15,10 +15,10 @@ pub async fn handle(req: Request, env: Env) -> Result<Response> {
     {
         return err.into_response();
     }
-    Router::new()
-        .get("/api/health", |_, _| {
-            Response::from_json(&json!({ "ok": true }))
-        })
+    let router = Router::new().get("/api/health", |_, _| {
+        Response::from_json(&json!({ "ok": true }))
+    });
+    crate::modules::routes(router)
         .or_else_any_method_async("/*path", |_, _| async {
             ApiError::NotFound.into_response()
         })
