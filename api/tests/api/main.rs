@@ -5,6 +5,7 @@
 // helpers no module calls yet would otherwise read as dead code.
 #![allow(dead_code)]
 
+mod auth;
 mod client;
 mod fixtures;
 mod health;
@@ -22,6 +23,7 @@ fn main() {
 
     let mut trials = Vec::new();
     health::register(&mut trials, &ctx);
+    auth::register(&mut trials, &ctx);
 
     let conclusion = libtest_mimic::run(&args, trials);
     drop(server);
