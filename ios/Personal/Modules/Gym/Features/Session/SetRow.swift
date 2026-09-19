@@ -80,7 +80,7 @@ struct SetRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Set \(row.number), \(row.valueText)")
+            .accessibilityLabel(valueLabel)
             .accessibilityHint("Edit weight and reps")
 
             completionButton
@@ -89,23 +89,52 @@ struct SetRow: View {
         .frame(minHeight: Theme.Spacing.rowMinHeight)
     }
 
+    /// The spoken row: "Set 2, 60 kg × 8, RPE 8.5".
+    private var valueLabel: String {
+        var text = "Set \(row.number), \(row.valueText)"
+        if let rpeText = row.rpeText {
+            text += ", \(rpeText)"
+        }
+        return text
+    }
+
     private var completionButton: some View {
         Button {
+            // `row` is this view's snapshot, taken before the write, so it
+            // still says whether the tap completes or un-completes the set.
+            let isCompleting = row.completed == false
             onToggle()
             Haptics.selection()
-            flash()
+            if isCompleting {
+                flash()
+            }
         } label: {
-            Image(systemName: row.completed ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(row.completed ? Theme.Colors.success : Theme.Colors.textTertiary)
-                .scaleEffect(symbolScale)
+            completionSymbol
                 .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .animation(completionAnimation, value: row.completed)
         .accessibilityLabel(row.completed ? "Completed" : "Not completed")
         .accessibilityHint("Completes this set")
+    }
+
+    /// Two symbols swapped by a transition rather than one symbol with a
+    /// scale: the resting state is then a plain 1.0 in both directions, and
+    /// the 0.8 → 1 bounce (design §5) belongs to the checkmark's arrival only.
+    private var completionSymbol: some View {
+        ZStack {
+            if row.completed {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Theme.Colors.success)
+                    .transition(completionTransition)
+            } else {
+                Image(systemName: "circle")
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .transition(.opacity)
+            }
+        }
+        .font(.system(size: 26, weight: .regular))
+        .animation(completionAnimation, value: row.completed)
     }
 
     private var deleteAction: some View {
@@ -127,13 +156,10 @@ struct SetRow: View {
 
     // MARK: - Motion (design §5)
 
-    /// The checkmark scales 0.8 → 1 with `.bouncy`; Reduce Motion drops the
-    /// scale and keeps the colour change alone.
-    private var symbolScale: CGFloat {
-        if reduceMotion {
-            return 1
-        }
-        return row.completed ? 1 : 0.8
+    /// The checkmark scales 0.8 → 1 with `.bouncy`; Reduce Motion replaces
+    /// the scale with a plain fade (design §5).
+    private var completionTransition: AnyTransition {
+        reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity)
     }
 
     private var completionAnimation: Animation {

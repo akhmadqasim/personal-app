@@ -25,6 +25,13 @@ enum DateFormat {
         return (primary: dayMonthFormatter.string(from: date), secondary: weekday)
     }
 
+    /// "Tue 19 Sep" — the absolute date in a session caption, where the
+    /// relative "Today / Yesterday" of ``dayHeader(_:)`` would be ambiguous
+    /// next to a running timer.
+    static func shortDate(_ ms: Int64) -> String {
+        shortDateFormatter.string(from: date(ms))
+    }
+
     /// The clock time of a session, in the user's own 12/24-hour setting.
     static func time(_ ms: Int64) -> String {
         timeFormatter.string(from: date(ms))
@@ -55,6 +62,13 @@ enum DateFormat {
     private static let weekdayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("EEEE")
+        return formatter
+    }()
+
+    /// "Tue 19 Sep" — the template lets the locale decide the order.
+    private static let shortDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("EEEdMMM")
         return formatter
     }()
 

@@ -112,6 +112,45 @@ struct SessionViewModelTests {
         #expect(updated.completed == false)
     }
 
+    /// The regression that made "Last time" erase itself: once the first set
+    /// of the running session was ticked off it became *the* last completed
+    /// set, and the caption echoed it back instead of last week's numbers.
+    @Test func theLastTimeCaptionIgnoresThisSessionsOwnSets() throws {
+        let (repository, _) = try makeSessionFixture()
+        try seedSessionProgram(repository)
+        // Last week: bench pressed at 45 × 12.
+        try repository.upsert(
+            WorkoutSession(id: "s0", startedAt: sessionBase - 1_000, finishedAt: sessionBase - 500))
+        try repository.upsert(
+            WorkoutSet(
+                id: "old",
+                sessionId: "s0",
+                exerciseId: "e1",
+                position: 0,
+                weightKg: 45,
+                reps: 12,
+                completed: true))
+
+        let (model, session) = try makeLoadedSession(repository)
+        let group = try #require(model.groups.first)
+        #expect(group.lastTime == "Last time 45 × 12")
+        let row = try #require(group.sets.first)
+
+        // Today: a heavier, shorter set, ticked off.
+        model.updateSet(row.id, weightKg: 50, reps: 5, rpe: nil)
+        model.toggleCompleted(row.id)
+
+        let live = try #require(model.groups.first)
+        #expect(live.lastTime == "Last time 45 × 12")
+
+        // A second view model reads it fresh, so the caption is right because
+        // of the query, not because of the cache.
+        let reopened = SessionViewModel(sessionId: session.id, repository: repository)
+        reopened.loadSession()
+        let rebuilt = try #require(reopened.groups.first)
+        #expect(rebuilt.lastTime == "Last time 45 × 12")
+    }
+
     // MARK: - Adding and editing
 
     @Test func addingASetCopiesTheOneBefore() throws {
@@ -130,6 +169,23 @@ struct SessionViewModelTests {
         #expect(added.reps == previous.reps)
         #expect(added.completed == false)
         #expect(added.number == 3)
+    }
+
+    @Test func addingASetCopiesTheRPETheUserWasWorkingAt() throws {
+        let (repository, _) = try makeSessionFixture()
+        try seedSessionProgram(repository)
+        let (model, _) = try makeLoadedSession(repository)
+        let group = try #require(model.groups.first)
+        let last = try #require(group.sets.last)
+        model.updateSet(last.id, weightKg: 62.5, reps: 6, rpe: 8.5)
+
+        model.addSet(to: group.id)
+
+        let rebuilt = try #require(model.groups.first)
+        let added = try #require(rebuilt.sets.last)
+        #expect(added.weightKg == 62.5)
+        #expect(added.reps == 6)
+        #expect(added.rpe == 8.5)
     }
 
     @Test func editingASetClampsRepsAndWeight() throws {

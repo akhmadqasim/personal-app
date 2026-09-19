@@ -156,12 +156,17 @@ struct TodayView: View {
 
     private func historyGroup(_ group: TodayHistoryGroup) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.rowSpacing) {
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+            // Design §3 date group: "Today / Friday" — the date in `headline`,
+            // the weekday behind a slash in `textTertiary`.
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
                 Text(group.primary)
                     .font(Theme.Typography.headline)
                     .foregroundStyle(Theme.Colors.textPrimary)
+                Text("/")
+                    .font(Theme.Typography.headline)
+                    .foregroundStyle(Theme.Colors.textTertiary)
                 Text(group.secondary)
-                    .font(Theme.Typography.caption)
+                    .font(Theme.Typography.headline)
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
             .accessibilityElement(children: .combine)

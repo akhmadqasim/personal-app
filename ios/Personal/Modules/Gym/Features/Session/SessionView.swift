@@ -33,9 +33,24 @@ struct SessionView: View {
             AmbientBackground(image: model.ambientImage)
         }
         .navigationBarTitleDisplayMode(.inline)
+        // Design §3: pushed pages carry a 40 pt circular glass back button,
+        // not the system chevron. Hiding the system one also disables the
+        // interactive swipe-back; the ruling accepts that trade.
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                CircleIconButton(systemImage: "chevron.left", accessibilityLabel: "Back") {
+                    dismiss()
+                }
+            }
+        }
         .toast($model.toast)
         .task {
             model.loadSession()
+        }
+        // Re-runs when the session's first exercise changes — adding a
+        // movement to an empty session changes what the ambient art is of.
+        .task(id: model.firstExerciseId) {
             await model.loadAmbientImage()
         }
         .task {
@@ -111,19 +126,32 @@ struct SessionView: View {
 
     // MARK: - Actions
 
+    /// Design §3 "Detail-page action row": one primary capsule and two
+    /// `surfaceSecondary` ones, equal widths, 8 pt gap, icon above a 13 pt
+    /// label. `More` has to stay a `Menu`, so it borrows ``PillButtonLabel``
+    /// rather than growing its own capsule.
     private var actionRow: some View {
-        VStack(spacing: Theme.Spacing.sm) {
-            PillButton(style: .primary, title: "Finish", systemImage: "checkmark") {
+        HStack(spacing: Theme.Spacing.sm) {
+            PillButton(
+                style: .primary,
+                layout: .iconAbove,
+                title: "Finish",
+                systemImage: "checkmark"
+            ) {
                 model.finish()
             }
             .disabled(model.isFinished)
 
-            HStack(spacing: Theme.Spacing.sm) {
-                PillButton(style: .secondary, title: "Add exercise", systemImage: "plus") {
-                    model.isPickingExercise = true
-                }
-                moreMenu
+            PillButton(
+                style: .secondary,
+                layout: .iconAbove,
+                title: "Add exercise",
+                systemImage: "plus"
+            ) {
+                model.isPickingExercise = true
             }
+
+            moreMenu
         }
     }
 
@@ -140,13 +168,11 @@ struct SessionView: View {
                 Label("Discard", systemImage: "trash")
             }
         } label: {
-            Label("More", systemImage: "ellipsis")
-                .font(Theme.Typography.headline)
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .padding(.horizontal, Theme.Spacing.xl)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .background(Theme.Colors.surfaceSecondary, in: Capsule())
-                .contentShape(Capsule())
+            PillButtonLabel(
+                style: .secondary,
+                layout: .iconAbove,
+                title: "More",
+                systemImage: "ellipsis")
         }
         .accessibilityLabel("More session actions")
     }
@@ -189,8 +215,9 @@ struct DiscardSessionSheet: View {
     /// 0 at rest, 1 at the far end; ≥ 0.9 on release confirms.
     @State private var progress: CGFloat = 0
 
-    private static let knobSize: CGFloat = 52
-    private static let trackHeight: CGFloat = 60
+    /// Design §3: a red "Slide to confirm" capsule, 48 pt, arrow knob.
+    private static let trackHeight: CGFloat = 48
+    private static let knobSize: CGFloat = 40
     private static let confirmAt: CGFloat = 0.9
 
     init(onConfirm: @escaping () -> Void) {
@@ -223,10 +250,10 @@ struct DiscardSessionSheet: View {
         let travel = max(1, width - Self.knobSize - Theme.Spacing.sm)
         return ZStack(alignment: .leading) {
             Capsule()
-                .fill(Theme.Colors.surfaceSecondary)
-            Text("Slide to discard")
+                .fill(Theme.Colors.dangerSoft)
+            Text("Slide to confirm")
                 .font(Theme.Typography.headline)
-                .foregroundStyle(Theme.Colors.textSecondary)
+                .foregroundStyle(Theme.Colors.danger)
                 .frame(maxWidth: .infinity)
                 .opacity(1 - Double(progress))
                 .allowsHitTesting(false)
@@ -250,8 +277,8 @@ struct DiscardSessionSheet: View {
             .fill(Theme.Colors.danger)
             .frame(width: Self.knobSize, height: Self.knobSize)
             .overlay {
-                Image(systemName: "trash")
-                    .font(.system(size: 20, weight: .semibold))
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Color.white)
             }
     }

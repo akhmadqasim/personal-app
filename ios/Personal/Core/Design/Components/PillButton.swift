@@ -21,20 +21,30 @@ struct PillButton: View {
         case destructive
     }
 
+    /// How the symbol and the label sit inside the capsule.
+    nonisolated enum Layout {
+        /// Symbol before the label, one line, `headline` — the full-width CTA.
+        case inline
+        /// Symbol above a 13 pt label — the detail-page action row (§3): one
+        /// primary capsule and two secondary ones, equal widths, 8 pt gap.
+        case iconAbove
+    }
+
     var style: Style
+    var layout: Layout
     var title: String
     var systemImage: String?
     var action: () -> Void
 
-    @Environment(\.isEnabled) private var isEnabled
-
     init(
         style: Style = .primary,
+        layout: Layout = .inline,
         title: String,
         systemImage: String? = nil,
         action: @escaping () -> Void
     ) {
         self.style = style
+        self.layout = layout
         self.title = title
         self.systemImage = systemImage
         self.action = action
@@ -42,6 +52,59 @@ struct PillButton: View {
 
     var body: some View {
         Button(action: action) {
+            PillButtonLabel(
+                style: style,
+                layout: layout,
+                title: title,
+                systemImage: systemImage)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - The capsule itself
+
+/// The chrome of a ``PillButton``, on its own so a control that cannot be a
+/// `Button` — the session's "More" `Menu` — can wear the same clothes instead
+/// of growing a second, drifting copy of the capsule.
+///
+/// It reads `isEnabled` from the environment rather than taking a flag:
+/// `.disabled(_:)` on the enclosing `Button` or `Menu` already propagates
+/// there, so the disabled look cannot be forgotten at a call site.
+struct PillButtonLabel: View {
+
+    var style: PillButton.Style
+    var layout: PillButton.Layout
+    var title: String
+    var systemImage: String?
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    init(
+        style: PillButton.Style = .primary,
+        layout: PillButton.Layout = .inline,
+        title: String,
+        systemImage: String? = nil
+    ) {
+        self.style = style
+        self.layout = layout
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        content
+            .padding(.horizontal, horizontalPadding)
+            .frame(maxWidth: .infinity, minHeight: minHeight)
+            .foregroundStyle(foreground)
+            .background(fillColor, in: Capsule())
+            .contentShape(Capsule())
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch layout {
+        case .inline:
             HStack(spacing: Theme.Spacing.sm) {
                 if let systemImage {
                     Image(systemName: systemImage)
@@ -50,19 +113,39 @@ struct PillButton: View {
                 Text(title)
                     .font(Theme.Typography.headline)
             }
-            .padding(.horizontal, Theme.Spacing.xl)
-            .frame(maxWidth: .infinity, minHeight: minHeight)
-            .foregroundStyle(foreground)
-            .background(fillColor, in: Capsule())
-            .contentShape(Capsule())
+        case .iconAbove:
+            VStack(spacing: Theme.Spacing.xs) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 20, weight: .regular))
+                }
+                Text(title)
+                    .font(Theme.Typography.caption)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .padding(.vertical, Theme.Spacing.md)
         }
-        .buttonStyle(.plain)
     }
 
     private var minHeight: CGFloat {
-        switch style {
-        case .secondary: 48
-        default: 52
+        switch layout {
+        case .iconAbove:
+            return 64
+        case .inline:
+            switch style {
+            case .secondary: return 48
+            default: return 52
+            }
+        }
+    }
+
+    /// The action row puts three capsules across the screen; `xl` would eat
+    /// the label.
+    private var horizontalPadding: CGFloat {
+        switch layout {
+        case .inline: Theme.Spacing.xl
+        case .iconAbove: Theme.Spacing.sm
         }
     }
 
@@ -101,6 +184,17 @@ private struct PillButtonGallery: View {
             PillButton(style: .destructive, title: "Delete", systemImage: "trash") {}
             PillButton(style: .primary, title: "Disabled") {}
                 .disabled(true)
+            HStack(spacing: Theme.Spacing.sm) {
+                PillButton(
+                    style: .primary, layout: .iconAbove,
+                    title: "Finish", systemImage: "checkmark") {}
+                PillButton(
+                    style: .secondary, layout: .iconAbove,
+                    title: "Add exercise", systemImage: "plus") {}
+                PillButton(
+                    style: .secondary, layout: .iconAbove,
+                    title: "More", systemImage: "ellipsis") {}
+            }
         }
         .padding(Theme.Spacing.screenInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

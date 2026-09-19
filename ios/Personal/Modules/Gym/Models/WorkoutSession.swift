@@ -18,6 +18,10 @@ nonisolated struct WorkoutSession: Codable, FetchableRecord, PersistableRecord, 
     var startedAt: Int64
     var finishedAt: Int64?
     var programDayId: String?
+    /// Free text. The Session screen's "Rename" writes the user's own title
+    /// here — the schema gives a session no name column of its own, and
+    /// `notes` is the one free-text field the sync engine already carries.
+    /// Both Session and Today's history prefer it over the program day's name.
     var notes: String?
 
     /// `true` once the user tapped Finish.

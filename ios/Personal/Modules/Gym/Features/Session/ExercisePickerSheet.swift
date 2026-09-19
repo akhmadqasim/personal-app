@@ -82,15 +82,11 @@ struct ExercisePickerSheet: View {
     private var chips: some View {
         ScrollView(.horizontal) {
             HStack(spacing: Theme.Spacing.sm) {
-                chip(label: "All", isSelected: muscleGroup == nil, tint: Theme.Colors.textPrimary) {
+                chip(label: "All", isSelected: muscleGroup == nil) {
                     muscleGroup = nil
                 }
                 ForEach(MuscleGroup.allCases) { group in
-                    chip(
-                        label: group.label,
-                        isSelected: muscleGroup == group,
-                        tint: Theme.accent(for: group.rawValue)
-                    ) {
+                    chip(label: group.label, isSelected: muscleGroup == group) {
                         muscleGroup = group
                     }
                 }
@@ -100,10 +96,12 @@ struct ExercisePickerSheet: View {
         .scrollIndicators(.hidden)
     }
 
+    /// Design §3 "Chips": 36 pt capsule, `surface` fill with a hairline
+    /// border, `secondary` label. Selected flips to the `ink` fill with the
+    /// inverse label — `canvas` is the inverse of `ink` in both schemes.
     private func chip(
         label: String,
         isSelected: Bool,
-        tint: Color,
         action: @escaping () -> Void
     ) -> some View {
         Button {
@@ -111,13 +109,16 @@ struct ExercisePickerSheet: View {
             Haptics.selection()
         } label: {
             Text(label)
-                .font(Theme.Typography.pill)
+                .font(Theme.Typography.secondary)
                 .foregroundStyle(isSelected ? Theme.Colors.canvas : Theme.Colors.textSecondary)
-                .padding(.horizontal, Theme.Spacing.md)
-                .frame(minHeight: 32)
-                .background(
-                    isSelected ? tint : Theme.Colors.surfaceSecondary,
-                    in: Capsule())
+                .padding(.horizontal, Theme.Spacing.lg)
+                .frame(minHeight: 36)
+                .background(isSelected ? Theme.Colors.ink : Theme.Colors.surface, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Theme.Colors.hairline, lineWidth: isSelected ? 0 : 1)
+                }
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])

@@ -58,6 +58,17 @@ nonisolated final class GymRepository: Sendable {
         }
     }
 
+    /// One day, or `nil` when it is missing or soft-deleted. The Session
+    /// screen needs the name behind a session's `program_day_id` without
+    /// walking every program.
+    func day(id: String) throws -> ProgramDay? {
+        try dbWriter.read { db in
+            try ProgramDay
+                .filter(sql: "id = ? AND deleted_at IS NULL", arguments: [id])
+                .fetchOne(db)
+        }
+    }
+
     /// The planned exercises of a day, in `position` order.
     func programExercises(of dayId: String) throws -> [ProgramExercise] {
         try dbWriter.read { db in
@@ -134,9 +145,20 @@ nonisolated final class GymRepository: Sendable {
     ///
     /// Drives the "Last time 57.5 × 8" caption and the prefill in
     /// `startSession(from:)`.
-    func lastCompletedSet(exerciseId: String) throws -> WorkoutSet? {
+    ///
+    /// `excludingSessionId` skips one session's own sets. The caption on the
+    /// Session screen passes the running session: without it, ticking off the
+    /// first set would make "Last time" echo the row the user just completed
+    /// instead of what they lifted the week before.
+    func lastCompletedSet(
+        exerciseId: String,
+        excludingSessionId: String? = nil
+    ) throws -> WorkoutSet? {
         try dbWriter.read { db in
-            try Self.fetchLastCompletedSet(db, exerciseId: exerciseId)
+            try Self.fetchLastCompletedSet(
+                db,
+                exerciseId: exerciseId,
+                excludingSessionId: excludingSessionId)
         }
     }
 
@@ -529,21 +551,26 @@ nonisolated final class GymRepository: Sendable {
             .fetchAll(db)
     }
 
-    private static func fetchLastCompletedSet(_ db: Database, exerciseId: String) throws -> WorkoutSet? {
+    private static func fetchLastCompletedSet(
+        _ db: Database,
+        exerciseId: String,
+        excludingSessionId: String? = nil
+    ) throws -> WorkoutSet? {
         try WorkoutSet.fetchOne(
             db,
             sql: """
                 SELECT s.*
                 FROM workout_set s
                 JOIN workout_session ss ON ss.id = s.session_id
-                WHERE s.exercise_id = ?
+                WHERE s.exercise_id = :exercise
                   AND s.completed = 1
                   AND s.deleted_at IS NULL
                   AND ss.deleted_at IS NULL
+                  AND (:excluded IS NULL OR s.session_id <> :excluded)
                 ORDER BY ss.started_at DESC, s.position DESC
                 LIMIT 1
                 """,
-            arguments: [exerciseId])
+            arguments: ["exercise": exerciseId, "excluded": excludingSessionId])
     }
 
     private static func newID() -> String {

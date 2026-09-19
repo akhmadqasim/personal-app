@@ -137,14 +137,21 @@ final class SessionViewModel {
     /// Loads the custom photo behind the content. Built-in art resolves to
     /// `nil` bytes, which leaves the background plain (spec §7).
     func loadAmbientImage() async {
+        // Cleared first: the art can change under us when the session's first
+        // exercise does, and stale blur behind a new movement is worse than
+        // plain `canvas`.
+        ambientImage = nil
         guard let key = art?.imageKey else { return }
         guard let store = imageStore else { return }
         guard let data = await store.imageData(for: key) else { return }
         ambientImage = UIImage(data: data)
     }
 
-    /// "Push A · Today · 18:40 · 00:42:10" — the caption under the title,
-    /// refreshed every second by the screen's `TimelineView`.
+    /// "Push A · Tue 19 Sep · 00:42:10 elapsed" (spec §6) — the caption under
+    /// the title, refreshed every second by the screen's `TimelineView`.
+    ///
+    /// The absolute date, not `dayHeader`'s relative "Today": next to a
+    /// running timer, "Today" reads as part of the duration.
     func caption(at date: Date) -> String {
         guard let session else { return "" }
         let end = session.finishedAt ?? Int64((date.timeIntervalSince1970 * 1000).rounded())
@@ -152,9 +159,8 @@ final class SessionViewModel {
         if let dayName {
             parts.append(dayName)
         }
-        parts.append(DateFormat.dayHeader(session.startedAt).primary)
-        parts.append(DateFormat.time(session.startedAt))
-        parts.append(DateFormat.elapsed(from: session.startedAt, to: end))
+        parts.append(DateFormat.shortDate(session.startedAt))
+        parts.append("\(DateFormat.elapsed(from: session.startedAt, to: end)) elapsed")
         return parts.joined(separator: " · ")
     }
 
@@ -162,15 +168,23 @@ final class SessionViewModel {
         session?.isFinished ?? false
     }
 
+    /// The exercise the ambient art comes from; the screen watches it so that
+    /// adding the first movement to an empty session reloads the background.
+    var firstExerciseId: String? {
+        groups.first?.id
+    }
+
     // MARK: - Writing
 
     /// Ticks a set off, or un-ticks it. The caller plays the haptic and the
     /// animation; this only moves the column.
+    ///
+    /// The "Last time" cache is deliberately left alone: the caption is about
+    /// what happened *before* this session, so nothing the user does in here
+    /// can change it.
     func toggleCompleted(_ setId: String) {
         guard var stored = storedSet(setId) else { return }
         stored.completed.toggle()
-        // "Last time" is derived from completed sets, so it can change here.
-        lastTimeCache.removeAll()
         save(stored)
     }
 
@@ -181,7 +195,6 @@ final class SessionViewModel {
         stored.weightKg = max(0, weightKg)
         stored.reps = max(1, reps)
         stored.rpe = rpe.map { min(10, max(1, $0)) }
-        lastTimeCache.removeAll()
         save(stored)
     }
 
@@ -190,26 +203,29 @@ final class SessionViewModel {
         do {
             try repository.softDelete(.workoutSet, id: setId)
             scheduler?.trigger(.afterWrite)
-            lastTimeCache.removeAll()
             reloadSets()
         } catch {
             toast = .error("Could not delete the set.")
         }
     }
 
-    /// "+ Add set": copies the last set of that exercise, else the last one
-    /// the user ever completed, else an empty set.
+    /// "+ Add set": copies the last set of that exercise — weight, reps and
+    /// the RPE the user was working at — else the last one they ever
+    /// completed, else an empty set.
     func addSet(to exerciseId: String) {
         var weightKg: Double = 0
         var reps = 8
+        var rpe: Double?
 
         let existing = sets.last(where: { $0.exerciseId == exerciseId })
         if let existing {
             weightKg = existing.weightKg
             reps = existing.reps
+            rpe = existing.rpe
         } else if let last = try? repository.lastCompletedSet(exerciseId: exerciseId) {
             weightKg = last.weightKg
             reps = last.reps
+            rpe = last.rpe
         }
 
         // `position` runs across the whole session, so a new set appends.
@@ -225,7 +241,8 @@ final class SessionViewModel {
                 exerciseId: exerciseId,
                 position: nextPosition,
                 weightKg: weightKg,
-                reps: reps))
+                reps: reps,
+                rpe: rpe))
     }
 
     /// The exercise picker's result: one prefilled set for a movement that was
@@ -372,15 +389,26 @@ final class SessionViewModel {
         return found
     }
 
-    /// "Last time 57.5 × 8", ignoring this session's own sets — otherwise the
-    /// caption would echo the row the user just ticked off.
+    /// "Last time 57.5 × 8" — the heaviest reference point the user has, taken
+    /// from any session but this one.
+    ///
+    /// The exclusion is done in SQL rather than by filtering the answer: once
+    /// the first set of this session is ticked off it becomes *the* last
+    /// completed set, and a post-hoc check would leave the caption blank
+    /// instead of showing last week's numbers.
+    ///
+    /// Cached per exercise and never invalidated for the life of the screen:
+    /// the value is about sessions that are already over, so only an exercise
+    /// added mid-session needs a fresh lookup.
     private func lastTime(_ exerciseId: String) -> String? {
         if let cached = lastTimeCache[exerciseId] {
             return cached
         }
         var text: String?
-        let last = try? repository.lastCompletedSet(exerciseId: exerciseId)
-        if let last, last.sessionId != sessionId {
+        let last = try? repository.lastCompletedSet(
+            exerciseId: exerciseId,
+            excludingSessionId: sessionId)
+        if let last {
             text = "Last time \(WeightFormat.plain(last.weightKg)) × \(last.reps)"
         }
         // `updateValue` rather than the subscript: assigning a `String?` into
@@ -391,14 +419,8 @@ final class SessionViewModel {
     }
 
     private func programDayName(for dayId: String) -> String? {
-        guard let programs = try? repository.programs() else { return nil }
-        for program in programs {
-            guard let days = try? repository.days(of: program.id) else { continue }
-            for day in days where day.id == dayId {
-                return day.name
-            }
-        }
-        return nil
+        guard let day = try? repository.day(id: dayId) else { return nil }
+        return day.name
     }
 
     private static func title(notes: String?, dayName: String?) -> String {

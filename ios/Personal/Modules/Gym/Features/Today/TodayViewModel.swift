@@ -117,9 +117,9 @@ final class TodayViewModel {
             }
             history = try loadHistory()
         } catch {
-            state = .noProgram
-            nextUp = nil
-            history = []
+            // Keep whatever is on screen. A failed read says nothing about
+            // whether a program exists, and blanking the card into
+            // "No program yet" would invite the user to create a second one.
             toast = .error("Could not read the local database.")
         }
     }
