@@ -46,15 +46,17 @@ enum Theme {
     // MARK: - Typography
 
     /// SF Pro presets, named as the spec's type table. Sizes are fixed points;
-    /// SwiftUI still scales them with Dynamic Type. `largeTitle` is drawn with
-    /// `.tracking(-0.4)` at the call site — tracking is a view modifier, not a
-    /// `Font` property.
+    /// SwiftUI still scales them with Dynamic Type.
     ///
     /// Named `Typography` rather than `Type`: Swift rejects a nested type named
     /// `Type` ("type member must not be named 'Type', since it would conflict
     /// with the 'foo.Type' expression").
     enum Typography {
         static let largeTitle = Font.system(size: 30, weight: .bold)
+        /// Call sites apply `.tracking(Theme.Typography.largeTitleTracking)`
+        /// alongside `largeTitle`; tracking is a view modifier, not a `Font`.
+        static let largeTitleTracking: CGFloat = -0.4
+
         static let title = Font.system(size: 24, weight: .bold)
         static let section = Font.system(size: 20, weight: .semibold)
         static let headline = Font.system(size: 17, weight: .semibold)

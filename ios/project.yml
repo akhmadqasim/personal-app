@@ -21,7 +21,7 @@ targets:
   Personal:
     type: application
     platform: iOS
-    sources: [Personal]
+    sources: [{ path: Personal, excludes: ["Resources/Info.plist"] }]
     dependencies:
       - package: GRDB
     info:
