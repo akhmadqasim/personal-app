@@ -51,6 +51,17 @@ nonisolated final class GymRepository: Sendable {
         }
     }
 
+    /// One program, or `nil` when it is missing or soft-deleted. The Programs
+    /// detail screen holds an id across a navigation push and has to survive
+    /// the program being deleted on another device.
+    func program(id: String) throws -> Program? {
+        try dbWriter.read { db in
+            try Program
+                .filter(sql: "id = ? AND deleted_at IS NULL", arguments: [id])
+                .fetchOne(db)
+        }
+    }
+
     /// The days of a program, in `position` order.
     func days(of programId: String) throws -> [ProgramDay] {
         try dbWriter.read { db in

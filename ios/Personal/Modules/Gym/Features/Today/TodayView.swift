@@ -53,7 +53,7 @@ struct TodayView: View {
             }
         }
         .sheet(isPresented: $isShowingSettings) {
-            settingsPlaceholder
+            SettingsView(environment: environment)
         }
         .toast($model.toast)
         .task {
@@ -208,27 +208,6 @@ struct TodayView: View {
             .font(Theme.Typography.section)
             .foregroundStyle(Theme.Colors.textPrimary)
             .accessibilityAddTraits(.isHeader)
-    }
-
-    /// Task 6 builds the real one; the sheet exists now so the gear is not a
-    /// dead control.
-    private var settingsPlaceholder: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            SheetHeader(
-                symbol: "gearshape",
-                title: "Settings",
-                subtitle: "API token, sync and export.",
-                onClose: { isShowingSettings = false })
-            Text("Settings — Task 6")
-                .font(Theme.Typography.secondary)
-                .foregroundStyle(Theme.Colors.textSecondary)
-            Spacer(minLength: 0)
-        }
-        .padding(Theme.Spacing.cardPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Colors.canvas)
-        .presentationDetents([.medium])
-        .presentationCornerRadius(Theme.Radius.sheet)
     }
 }
 

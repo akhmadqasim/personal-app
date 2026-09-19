@@ -27,15 +27,20 @@ final class AppEnvironment {
     let syncStatus: SyncStatus
     let syncScheduler: SyncScheduler
     let imageStore: ImageStore
+    /// Behind a protocol so Settings can be tested without the real keychain.
+    let tokenStore: any TokenStore
 
     /// `https://api.akhmadqasim.com` (global constraints); the bearer token
     /// comes from the keychain on every request, so changing it in Settings
     /// takes effect without rebuilding anything.
     nonisolated static let baseURL = URL(string: "https://api.akhmadqasim.com")!
 
-    init(dbWriter: any DatabaseWriter) {
+    init(dbWriter: any DatabaseWriter, tokenStore: any TokenStore = KeychainTokenStore()) {
         let clock = SystemClock()
-        let api = APIClient(baseURL: Self.baseURL, tokenProvider: { Keychain.token() })
+        // Captured as a local: the closure is `@Sendable` and must not reach
+        // for `self`, which is not built yet.
+        let store = tokenStore
+        let api = APIClient(baseURL: Self.baseURL, tokenProvider: { store.token() })
         let engine = SyncEngine(db: dbWriter, api: api, clock: clock)
         let status = SyncStatus()
 
@@ -46,6 +51,7 @@ final class AppEnvironment {
         self.syncStatus = status
         self.syncScheduler = SyncScheduler(engine: engine, status: status)
         self.imageStore = ImageStore(api: api)
+        self.tokenStore = tokenStore
     }
 
     /// The environment the app runs on: a `DatabasePool` at

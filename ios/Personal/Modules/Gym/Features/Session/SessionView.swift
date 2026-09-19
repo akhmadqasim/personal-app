@@ -77,6 +77,7 @@ struct SessionView: View {
             ExercisePickerSheet(
                 repository: environment.repository,
                 imageStore: model.imageStore,
+                scheduler: environment.syncScheduler,
                 onPick: { exercise in
                     model.addExercise(exercise)
                 })

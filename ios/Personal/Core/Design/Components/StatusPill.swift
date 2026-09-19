@@ -12,6 +12,8 @@ struct StatusPill: View {
         case skipped
         case pr
         case draft
+        /// The one program Today reads from (spec §6, Programs list).
+        case active
 
         /// Every pill carries a text label (spec §6) — VoiceOver reads this.
         var label: String {
@@ -21,6 +23,7 @@ struct StatusPill: View {
             case .skipped: "Skipped"
             case .pr: "PR"
             case .draft: "Draft"
+            case .active: "Active"
             }
         }
     }
@@ -46,7 +49,7 @@ struct StatusPill: View {
 
     private var foreground: Color {
         switch kind {
-        case .completed, .pr: Theme.Colors.success
+        case .completed, .pr, .active: Theme.Colors.success
         case .inProgress: Theme.Colors.info
         case .skipped: Theme.Colors.warning
         case .draft: Theme.Colors.textTertiary
@@ -55,7 +58,7 @@ struct StatusPill: View {
 
     private var fillColor: Color {
         switch kind {
-        case .completed, .pr: Theme.Colors.successSoft
+        case .completed, .pr, .active: Theme.Colors.successSoft
         case .inProgress: Theme.Colors.infoSoft
         case .skipped: Theme.Colors.warningSoft
         case .draft: Theme.Colors.surfaceSecondary

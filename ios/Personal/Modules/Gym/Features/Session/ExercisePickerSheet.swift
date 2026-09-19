@@ -9,6 +9,9 @@ struct ExercisePickerSheet: View {
 
     var repository: GymRepository
     var imageStore: ImageStore?
+    /// Optional: a movement created from inside the sheet should reach the
+    /// server without waiting for the next unrelated write.
+    var scheduler: SyncScheduler?
     var onPick: (Exercise) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -16,14 +19,17 @@ struct ExercisePickerSheet: View {
     @State private var search = ""
     @State private var muscleGroup: MuscleGroup?
     @State private var results: [Exercise] = []
+    @State private var isCreating = false
 
     init(
         repository: GymRepository,
         imageStore: ImageStore?,
+        scheduler: SyncScheduler? = nil,
         onPick: @escaping (Exercise) -> Void
     ) {
         self.repository = repository
         self.imageStore = imageStore
+        self.scheduler = scheduler
         self.onPick = onPick
     }
 
@@ -31,7 +37,9 @@ struct ExercisePickerSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    chips
+                    MuscleGroupChips(selection: muscleGroup) { group in
+                        muscleGroup = group
+                    }
                     if results.isEmpty {
                         EmptyState(
                             symbol: "magnifyingglass",
@@ -54,10 +62,25 @@ struct ExercisePickerSheet: View {
             .searchable(text: $search, prompt: "Search exercises")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    CircleIconButton(systemImage: "plus", accessibilityLabel: "New exercise") {
+                        isCreating = true
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     CircleIconButton(systemImage: "xmark", accessibilityLabel: "Close") {
                         dismiss()
                     }
                 }
+            }
+            // A movement that is not in the catalog yet: add it here and it
+            // appears in the list below, ready to be picked.
+            .sheet(isPresented: $isCreating) {
+                ExerciseEditorView(
+                    repository: repository,
+                    scheduler: scheduler,
+                    onSaved: { _ in
+                        reload()
+                    })
             }
         }
         .presentationDetents([.large])
@@ -78,51 +101,6 @@ struct ExercisePickerSheet: View {
     }
 
     // MARK: - Pieces
-
-    private var chips: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: Theme.Spacing.sm) {
-                chip(label: "All", isSelected: muscleGroup == nil) {
-                    muscleGroup = nil
-                }
-                ForEach(MuscleGroup.allCases) { group in
-                    chip(label: group.label, isSelected: muscleGroup == group) {
-                        muscleGroup = group
-                    }
-                }
-            }
-            .padding(.vertical, Theme.Spacing.xs)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    /// Design §3 "Chips": 36 pt capsule, `surface` fill with a hairline
-    /// border, `secondary` label. Selected flips to the `ink` fill with the
-    /// inverse label — `canvas` is the inverse of `ink` in both schemes.
-    private func chip(
-        label: String,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            action()
-            Haptics.selection()
-        } label: {
-            Text(label)
-                .font(Theme.Typography.secondary)
-                .foregroundStyle(isSelected ? Theme.Colors.canvas : Theme.Colors.textSecondary)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .frame(minHeight: 36)
-                .background(isSelected ? Theme.Colors.ink : Theme.Colors.surface, in: Capsule())
-                .overlay {
-                    Capsule()
-                        .strokeBorder(Theme.Colors.hairline, lineWidth: isSelected ? 0 : 1)
-                }
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
-    }
 
     private func row(_ exercise: Exercise) -> some View {
         Button {
