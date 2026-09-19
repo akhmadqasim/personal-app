@@ -70,8 +70,6 @@ pub fn pull_sql(table: &SyncTable) -> String {
 }
 
 /// All active rows, for exports.
-// Consumed by the export handler (Task 9).
-#[allow(dead_code)]
 pub fn export_sql(table: &SyncTable) -> String {
     format!(
         "SELECT {cols} FROM {t} WHERE deleted_at IS NULL ORDER BY seq",
