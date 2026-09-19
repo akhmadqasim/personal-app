@@ -10,7 +10,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      WRANGLER_SEND_METRICS: "false"
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: "1"
     defaults:
       run:
         working-directory: api
@@ -33,4 +38,34 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --lib
       - run: cargo install worker-build --locked
-      - run: cargo test --test api
+      - name: Smoke-test wrangler dev on this runner
+        timeout-minutes: 10
+        run: |
+          set -euxo pipefail
+          npx wrangler --version
+          npx wrangler d1 migrations apply DB --local --persist-to .wrangler/ci-smoke </dev/null
+          (npx wrangler dev --port 8799 --ip 127.0.0.1 --var API_TOKEN:ci --persist-to .wrangler/ci-smoke --log-level info </dev/null > wrangler-smoke.log 2>&1 &)
+          for i in $(seq 1 120); do
+            if curl -sf http://127.0.0.1:8799/api/health; then echo; echo "healthy after ${i}x2s"; break; fi
+            sleep 2
+            if [ "$i" = 120 ]; then echo "wrangler dev never became healthy"; cat wrangler-smoke.log; exit 1; fi
+          done
+          curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer ci" -X POST -H "content-type: application/json" -d '{"since_seq":0}' http://127.0.0.1:8799/api/sync
+          pkill -9 -f "wrangler dev" || true; pkill -9 -f workerd || true
+          tail -50 wrangler-smoke.log
+      - name: Run integration tests
+        timeout-minutes: 22
+        run: |
+          set -o pipefail
+          timeout 20m cargo test --test api -- --nocapture 2>&1 | tee api-test.log | tail -200
+      - name: Tail integration test log
+        if: always()
+        run: tail -300 api-test.log
+      - name: Upload API CI logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-ci-logs
+          path: |
+            api/api-test.log
+            api/wrangler-smoke.log
