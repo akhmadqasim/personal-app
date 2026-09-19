@@ -61,6 +61,11 @@ struct DayEditorView: View {
         .task {
             model.reload()
         }
+        // Same reason as ``ProgramDetailView``: the tab's stack owns the path,
+        // so a dismissed sheet or a pop back lands here as `onAppear`.
+        .onAppear {
+            model.reload()
+        }
         .onChange(of: model.isGone) { _, isGone in
             if isGone {
                 dismiss()

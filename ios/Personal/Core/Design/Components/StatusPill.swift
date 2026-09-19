@@ -9,8 +9,11 @@ struct StatusPill: View {
     nonisolated enum Kind: String, CaseIterable, Sendable {
         case completed
         case inProgress
+        /// Defined by the design system; no screen uses it yet.
         case skipped
+        /// Defined by the design system; no screen uses it yet.
         case pr
+        /// Defined by the design system; no screen uses it yet.
         case draft
         /// The one program Today reads from (spec §6, Programs list).
         case active
@@ -47,10 +50,12 @@ struct StatusPill: View {
             .background(fillColor, in: Capsule())
     }
 
+    /// `active` is `info`, not `success` (design §2): success means something
+    /// finished, and the active program is a selection, not an achievement.
     private var foreground: Color {
         switch kind {
-        case .completed, .pr, .active: Theme.Colors.success
-        case .inProgress: Theme.Colors.info
+        case .completed, .pr: Theme.Colors.success
+        case .inProgress, .active: Theme.Colors.info
         case .skipped: Theme.Colors.warning
         case .draft: Theme.Colors.textTertiary
         }
@@ -58,8 +63,8 @@ struct StatusPill: View {
 
     private var fillColor: Color {
         switch kind {
-        case .completed, .pr, .active: Theme.Colors.successSoft
-        case .inProgress: Theme.Colors.infoSoft
+        case .completed, .pr: Theme.Colors.successSoft
+        case .inProgress, .active: Theme.Colors.infoSoft
         case .skipped: Theme.Colors.warningSoft
         case .draft: Theme.Colors.surfaceSecondary
         }

@@ -12,6 +12,20 @@ nonisolated enum SyncOutcome: Equatable, Sendable {
     case failure(ApiError)
 }
 
+/// What ``SyncScheduler`` needs from the engine, behind a protocol.
+///
+/// It exists so the scheduler's own rules — when a run starts, and what a
+/// caller that arrives mid-run is told — can be tested without a database, an
+/// ``APIClient`` and a server stub. The requirements are `nonisolated` for the
+/// same reason ``AppClock``'s are: the witness is an `actor`, and the scheduler
+/// awaits it from the main actor.
+protocol SyncRunning: Sendable {
+    /// Runs one replication and reports what it ended in.
+    nonisolated func sync() async -> SyncOutcome
+    /// When the last successful run finished, in milliseconds since the epoch.
+    nonisolated func lastSyncedAt() async throws -> Int64?
+}
+
 /// Two-way replication against `POST /api/sync` (spec §5).
 ///
 /// An `actor`, not a `@MainActor` type: it awaits the database and the network,
@@ -204,6 +218,8 @@ actor SyncEngine {
         }
     }
 }
+
+extension SyncEngine: SyncRunning {}
 
 /// One row the engine sent, remembered so `dirty` is only cleared when the row
 /// did not change while the request was in flight (spec §5).

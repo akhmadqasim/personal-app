@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// The running session (spec §6, design §4): ambient background, the elapsed
@@ -102,13 +103,15 @@ struct SessionView: View {
 
     private var heading: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(model.caption(at: context.date))
-                    .font(Theme.Typography.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+            // The caption only ticks while the session is running; once it is
+            // finished the elapsed time is fixed, and a `TimelineView` would
+            // redraw the heading every second to produce the same string.
+            if model.isFinished {
+                captionText(at: .now)
+            } else {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    captionText(at: context.date)
+                }
             }
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
                 Text(model.title)
@@ -123,6 +126,15 @@ struct SessionView: View {
             .accessibilityAddTraits(.isHeader)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func captionText(at date: Date) -> some View {
+        Text(model.caption(at: date))
+            .font(Theme.Typography.caption)
+            .monospacedDigit()
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
     }
 
     // MARK: - Actions

@@ -49,6 +49,7 @@ struct ProgressTabView: View {
                 ExercisePickerSheet(
                     repository: environment.repository,
                     imageStore: environment.imageStore,
+                    scheduler: environment.syncScheduler,
                     title: "Choose exercise",
                     allowsCreating: false,
                     rowSymbol: "chart.line.uptrend.xyaxis"
@@ -59,6 +60,10 @@ struct ProgressTabView: View {
         }
         .toast($model.toast)
         .task {
+            model.reload()
+        }
+        // Sets synced from another device change every series on this tab.
+        .onChange(of: environment.syncStatus.lastSyncedAt) { _, _ in
             model.reload()
         }
     }

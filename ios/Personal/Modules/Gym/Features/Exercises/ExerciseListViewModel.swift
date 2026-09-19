@@ -18,6 +18,19 @@ nonisolated struct ExerciseRow: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Why the catalog has nothing to show.
+///
+/// The two cases read very differently to a new user: an unfiltered empty list
+/// means the catalog has never arrived, and telling that user to "try another
+/// muscle group" sends them looking for movements that are not on the device
+/// at all.
+nonisolated enum ExerciseListEmptyState: Equatable, Sendable {
+    /// No rows, no chip, no search term: the first sync has not landed yet.
+    case needsSync
+    /// A chip or a search term hid everything the catalog does hold.
+    case noMatches
+}
+
 /// Drives the exercise catalog: a muscle-group chip row over a search field.
 ///
 /// Both filters go into one repository query, which already escapes the search
@@ -40,10 +53,32 @@ final class ExerciseListViewModel {
     let imageStore: ImageStore?
 
     private let repository: GymRepository
+    /// Optional: the "Sync now" button of the first-run empty state. Previews
+    /// and most tests build the model without one.
+    private let scheduler: SyncScheduler?
 
-    init(repository: GymRepository, imageStore: ImageStore? = nil) {
+    init(
+        repository: GymRepository,
+        imageStore: ImageStore? = nil,
+        scheduler: SyncScheduler? = nil
+    ) {
         self.repository = repository
         self.imageStore = imageStore
+        self.scheduler = scheduler
+    }
+
+    /// `nil` when there are rows to show.
+    var emptyState: ExerciseListEmptyState? {
+        guard rows.isEmpty else { return nil }
+        if search.isEmpty && muscleGroup == nil {
+            return .needsSync
+        }
+        return .noMatches
+    }
+
+    /// The empty state's call to action: ask for a sync right now.
+    func syncNow() {
+        scheduler?.trigger(.manual)
     }
 
     /// One `Equatable` value for `.task(id:)`: a new chip or a new search term

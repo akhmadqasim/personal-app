@@ -3,6 +3,8 @@ import SwiftUI
 /// The header segmented control (§3 "Pill segmented control"): a
 /// `surfaceSecondary` capsule track with a brighter selected segment that
 /// slides between labels ("Upcoming | History").
+///
+/// Defined by the design system; no screen uses it yet.
 struct SegmentedPill: View {
 
     @Binding var selection: Int

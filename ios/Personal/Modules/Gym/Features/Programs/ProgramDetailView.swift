@@ -58,6 +58,13 @@ struct ProgramDetailView: View {
         .task {
             model.reload()
         }
+        // The stack that owns the path is two screens up, so this screen has
+        // no `onChange(of: path)` to hang a reload on: popping back from the
+        // day editor only ever runs `onAppear`. `reload()` is a plain re-read,
+        // so running it twice on the first appearance costs nothing.
+        .onAppear {
+            model.reload()
+        }
         .onChange(of: model.isGone) { _, isGone in
             if isGone {
                 dismiss()

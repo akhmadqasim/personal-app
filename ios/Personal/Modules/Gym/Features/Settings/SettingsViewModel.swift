@@ -155,17 +155,30 @@ final class SettingsViewModel {
         await run(successMessage: "Connection is working")
     }
 
+    /// Reports the outcome of the run the scheduler actually made, not the
+    /// state the screen happens to be in: an in-flight run used to leave the
+    /// status at `.syncing` and have "Test connection" claim success while no
+    /// request had come back yet.
     private func run(successMessage: String) async {
         guard isWorking == false else { return }
         isWorking = true
-        await scheduler?.syncNow()
+        var outcome: SyncOutcome?
+        if let scheduler {
+            outcome = await scheduler.syncNow()
+        }
         isWorking = false
-        if case .error(let message) = syncStatus.state {
+        guard let outcome else {
             Haptics.error()
-            toast = .error(message)
-        } else {
+            toast = .error("Sync did not run.")
+            return
+        }
+        switch outcome {
+        case .success:
             Haptics.success()
             toast = .success(successMessage)
+        case .failure(let error):
+            Haptics.error()
+            toast = .error(error.message)
         }
     }
 

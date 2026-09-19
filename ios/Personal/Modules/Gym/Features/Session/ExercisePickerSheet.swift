@@ -61,10 +61,7 @@ struct ExercisePickerSheet: View {
                         muscleGroup = group
                     }
                     if results.isEmpty {
-                        EmptyState(
-                            symbol: "magnifyingglass",
-                            title: "No exercises found",
-                            message: "Try another muscle group or clear the search.")
+                        emptyView
                     } else {
                         ForEach(results) { exercise in
                             row(exercise)
@@ -110,6 +107,24 @@ struct ExercisePickerSheet: View {
         .presentationCornerRadius(Theme.Radius.sheet)
         .task(id: queryKey) {
             reload()
+        }
+    }
+
+    /// The same split the catalog makes: an unfiltered empty list means the
+    /// catalog has not arrived yet, which no change of filter will fix.
+    @ViewBuilder
+    private var emptyView: some View {
+        if search.isEmpty && muscleGroup == nil {
+            EmptyState(
+                symbol: "arrow.triangle.2.circlepath",
+                title: "No exercises yet",
+                message: "The catalog arrives with your first sync. Add your API token in Settings, then sync.",
+                action: (title: "Sync now", handler: { scheduler?.trigger(.manual) }))
+        } else {
+            EmptyState(
+                symbol: "magnifyingglass",
+                title: "No exercises found",
+                message: "Try another muscle group or clear the search.")
         }
     }
 

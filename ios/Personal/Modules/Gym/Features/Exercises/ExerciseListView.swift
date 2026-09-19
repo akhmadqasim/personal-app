@@ -46,7 +46,8 @@ struct ExerciseListView: View {
         _model = State(
             initialValue: ExerciseListViewModel(
                 repository: environment.repository,
-                imageStore: environment.imageStore))
+                imageStore: environment.imageStore,
+                scheduler: environment.syncScheduler))
     }
 
     var body: some View {
@@ -81,6 +82,11 @@ struct ExerciseListView: View {
         .task(id: model.queryKey) {
             model.reload()
         }
+        // A sync that lands while the catalog is open is the whole point of
+        // the first-run empty state: the rows appear without a pull to refresh.
+        .onChange(of: environment.syncStatus.lastSyncedAt) { _, _ in
+            model.reload()
+        }
         .sheet(isPresented: $model.isCreating) {
             ExerciseEditorView(
                 repository: environment.repository,
@@ -93,12 +99,8 @@ struct ExerciseListView: View {
 
     @ViewBuilder
     private var list: some View {
-        if model.rows.isEmpty {
-            EmptyState(
-                symbol: "magnifyingglass",
-                title: "No exercises found",
-                message: "Try another muscle group, clear the search, or add the movement yourself.",
-                action: (title: "New exercise", handler: { model.isCreating = true }))
+        if let emptyState = model.emptyState {
+            emptyView(emptyState)
         } else {
             VStack(alignment: .leading, spacing: Theme.Spacing.rowSpacing) {
                 ForEach(model.rows) { row in
@@ -111,9 +113,32 @@ struct ExerciseListView: View {
         }
     }
 
+    /// An empty catalog on a fresh install is not a failed search: the rows
+    /// arrive with the first sync, so the button offers that rather than
+    /// sending the user to widen a filter they never set.
+    @ViewBuilder
+    private func emptyView(_ state: ExerciseListEmptyState) -> some View {
+        switch state {
+        case .needsSync:
+            EmptyState(
+                symbol: "arrow.triangle.2.circlepath",
+                title: "No exercises yet",
+                message: "The catalog arrives with your first sync. Add your API token in Settings, then sync.",
+                action: (title: "Sync now", handler: { model.syncNow() }))
+        case .noMatches:
+            EmptyState(
+                symbol: "magnifyingglass",
+                title: "No exercises found",
+                message: "Try another muscle group, clear the search, or add the movement yourself.",
+                action: (title: "New exercise", handler: { model.isCreating = true }))
+        }
+    }
+
     private func exerciseRow(_ row: ExerciseRow) -> some View {
         ThumbnailRow(
-            thumbnail: { ExerciseArtView(art: row.art, size: 72, store: model.imageStore) },
+            thumbnail: { size in
+                ExerciseArtView(art: row.art, size: size, store: model.imageStore)
+            },
             title: row.name,
             meta: [("dumbbell", row.meta)])
     }

@@ -97,6 +97,9 @@ struct ProgramsView: View {
                 model.reload()
             }
         }
+        .onChange(of: environment.syncStatus.lastSyncedAt) { _, _ in
+            model.reload()
+        }
     }
 
     // MARK: - Destinations
@@ -165,7 +168,9 @@ struct ProgramsView: View {
 
     private func programRow(_ row: ProgramRow) -> some View {
         ThumbnailRow(
-            thumbnail: { ExerciseArtView(art: row.art, size: 72, store: model.imageStore) },
+            thumbnail: { size in
+                ExerciseArtView(art: row.art, size: size, store: model.imageStore)
+            },
             title: row.name,
             meta: [("calendar", row.meta)],
             pill: Self.pill(isActive: row.isActive))

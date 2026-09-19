@@ -16,6 +16,7 @@ struct PillButton: View {
         /// `surfaceSecondary` fill, primary-text label.
         case secondary
         /// Contextual accent fill (`Theme.accent(for:)`), white label.
+        /// Defined by the design system; no screen uses it yet.
         case accent(Color)
         /// `danger` fill, white label.
         case destructive

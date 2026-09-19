@@ -20,6 +20,7 @@ struct RootTabView: View {
     @Environment(AppEnvironment.self) private var environment
 
     @State private var selection: RootTab = .today
+    @State private var toast: ToastItem?
 
     var body: some View {
         TabView(selection: $selection) {
@@ -37,6 +38,15 @@ struct RootTabView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .tint(Theme.Colors.ink)
+        .toast($toast)
+        // A background sync fails silently otherwise: only Settings shows the
+        // state line, and the user is rarely on it. Settings open at the same
+        // time will say it twice, which is the lesser problem.
+        .onChange(of: environment.syncStatus.state) { _, new in
+            if case .error(let message) = new {
+                toast = .error(message)
+            }
+        }
     }
 }
 

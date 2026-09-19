@@ -75,12 +75,21 @@ jobs:
                   if d.get("isAvailable") and d["name"].startswith("iPhone")
               ]
 
+          def version(runtime):
+              # "com.apple.CoreSimulator.SimRuntime.iOS-26-0" -> "26.0".
+              if "iOS-" not in runtime:
+                  return ""
+              parts = runtime.rsplit("iOS-", 1)[-1].split("-")
+              if not parts or not all(p.isdigit() for p in parts):
+                  return ""
+              return ".".join(parts)
+
           preferred = [r for r in devices if "iOS-26" in r]
           rest = [r for r in devices if r not in preferred]
           for runtime in sorted(preferred, reverse=True) + rest:
               names = iphones(runtime)
               if names:
-                  print("%s|%s" % (names[0], runtime))
+                  print("%s|%s|%s" % (names[0], runtime, version(runtime)))
                   break
           ')
           if [ -z "$SIM_INFO" ]; then
@@ -89,16 +98,27 @@ jobs:
             xcrun simctl list runtimes >&2
             exit 1
           fi
-          SIM_NAME=${SIM_INFO%%|*}
-          SIM_RUNTIME=${SIM_INFO#*|}
-          echo "Using simulator: $SIM_NAME (runtime $SIM_RUNTIME)"
+          SIM_NAME=$(printf '%s' "$SIM_INFO" | cut -d'|' -f1)
+          SIM_RUNTIME=$(printf '%s' "$SIM_INFO" | cut -d'|' -f2)
+          SIM_RUNTIME_VERSION=$(printf '%s' "$SIM_INFO" | cut -d'|' -f3)
+          echo "Using simulator: $SIM_NAME (runtime $SIM_RUNTIME, OS ${SIM_RUNTIME_VERSION:-unknown})"
           echo "SIM_NAME=$SIM_NAME" >> "$GITHUB_ENV"
+          echo "SIM_RUNTIME_VERSION=$SIM_RUNTIME_VERSION" >> "$GITHUB_ENV"
 
+      # `name=` alone matches whatever runtime the device happens to be on,
+      # which becomes ambiguous the moment the image ships two. Pinning `OS=`
+      # keeps the run reproducible; an unparseable runtime identifier falls
+      # back to the looser destination rather than failing the job.
       - name: Test
         run: |
           set -euo pipefail
+          DESTINATION="platform=iOS Simulator,name=$SIM_NAME"
+          if [ -n "${SIM_RUNTIME_VERSION:-}" ]; then
+            DESTINATION="$DESTINATION,OS=$SIM_RUNTIME_VERSION"
+          fi
+          echo "Destination: $DESTINATION"
           xcodebuild test -project Personal.xcodeproj -scheme Personal \
-            -destination "platform=iOS Simulator,name=$SIM_NAME" \
+            -destination "$DESTINATION" \
             -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO | tee xcodebuild.log | tail -50
 
       - uses: actions/upload-artifact@v4

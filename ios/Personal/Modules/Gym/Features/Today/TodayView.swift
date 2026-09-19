@@ -65,6 +65,10 @@ struct TodayView: View {
                 model.reload()
             }
         }
+        // A sync that lands brings sessions and programs from other devices.
+        .onChange(of: environment.syncStatus.lastSyncedAt) { _, _ in
+            model.reload()
+        }
     }
 
     // MARK: - Header
@@ -185,7 +189,9 @@ struct TodayView: View {
 
     private func historyRow(_ item: TodayHistoryItem) -> some View {
         ThumbnailRow(
-            thumbnail: { ExerciseArtView(art: item.art, size: 72, store: model.imageStore) },
+            thumbnail: { size in
+                ExerciseArtView(art: item.art, size: size, store: model.imageStore)
+            },
             caption: item.time,
             captionSymbol: "clock",
             title: item.title,

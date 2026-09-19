@@ -26,13 +26,19 @@ final class SyncScheduler {
     /// The state the UI observes.
     let status: SyncStatus
 
-    private let engine: SyncEngine
+    private let engine: any SyncRunning
     private let debounce: Duration
     private var debounceTask: Task<Void, Never>?
-    private var isRunning = false
+    /// The run currently in flight. Held as the `Task` itself, not as a flag,
+    /// so a second caller can await the outcome of the run it joined.
+    private var inFlight: Task<SyncOutcome, Never>?
     private var runAgain = false
 
-    init(engine: SyncEngine, status: SyncStatus = SyncStatus(), debounce: Duration = .seconds(2)) {
+    init(
+        engine: any SyncRunning,
+        status: SyncStatus = SyncStatus(),
+        debounce: Duration = .seconds(2)
+    ) {
         self.engine = engine
         self.status = status
         self.debounce = debounce
@@ -65,37 +71,51 @@ final class SyncScheduler {
                 } catch {
                     return
                 }
-                await self?.syncNow()
+                _ = await self?.syncNow()
             }
         case .launch, .foreground, .manual:
             Task { [weak self] in
-                await self?.syncNow()
+                _ = await self?.syncNow()
             }
         }
     }
 
-    /// Runs the engine now, unless a run is already in flight — in which case
-    /// that run is asked to go around once more, so a write made mid-sync is
-    /// never left behind.
-    func syncNow() async {
-        if isRunning {
+    /// Runs the engine and answers for the run that actually happened.
+    ///
+    /// When a run is already in flight it is asked to go around once more — a
+    /// write made mid-sync is never left behind — and this call *waits* for
+    /// that run instead of returning at once. "Test connection" reports what
+    /// it is told, so being told nothing would let it say the connection works
+    /// while no request ever left the device.
+    ///
+    /// `nil` means the run produced no outcome at all, which only happens when
+    /// the scheduler was torn down mid-run.
+    @discardableResult
+    func syncNow() async -> SyncOutcome? {
+        if let inFlight {
             runAgain = true
-            return
+            return await inFlight.value
         }
-        isRunning = true
-        defer { isRunning = false }
 
-        repeat {
-            runAgain = false
-            status.state = .syncing
-            let outcome = await engine.sync()
-            switch outcome {
-            case .success:
-                status.state = .idle
-                status.lastSyncedAt = Date()
-            case .failure(let error):
-                status.state = .error(error.message)
-            }
-        } while runAgain
+        let task: Task<SyncOutcome, Never> = Task { [self] in
+            var last: SyncOutcome
+            repeat {
+                runAgain = false
+                status.state = .syncing
+                last = await engine.sync()
+                switch last {
+                case .success:
+                    status.state = .idle
+                    status.lastSyncedAt = Date()
+                case .failure(let error):
+                    status.state = .error(error.message)
+                }
+            } while runAgain
+            return last
+        }
+        inFlight = task
+        let outcome = await task.value
+        inFlight = nil
+        return outcome
     }
 }

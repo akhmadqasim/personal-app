@@ -12,7 +12,11 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
     /// One meta line: a 16 pt SF Symbol and its text.
     typealias Meta = (symbol: String, text: String)
 
-    var thumbnail: Thumbnail
+    /// Built with the row's *scaled* thumbnail size rather than a fixed 72, so
+    /// an image view that renders from a size — ``ExerciseArtView`` picks its
+    /// symbol point size from it — grows with Dynamic Type instead of being
+    /// drawn small and stretched.
+    var thumbnail: (CGFloat) -> Thumbnail
     var caption: String?
     /// Optional 16 pt symbol before the caption text (spec §3).
     var captionSymbol: String?
@@ -25,7 +29,7 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
     @ScaledMetric(relativeTo: .headline) private var scaledThumbnail: CGFloat = 72
 
     init(
-        @ViewBuilder thumbnail: () -> Thumbnail,
+        @ViewBuilder thumbnail: @escaping (CGFloat) -> Thumbnail,
         caption: String? = nil,
         captionSymbol: String? = nil,
         title: String,
@@ -33,7 +37,7 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
         pill: StatusPill? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
-        self.thumbnail = thumbnail()
+        self.thumbnail = thumbnail
         self.caption = caption
         self.captionSymbol = captionSymbol
         self.title = title
@@ -58,7 +62,7 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
     }
 
     private var thumbnailView: some View {
-        thumbnail
+        thumbnail(thumbnailSize)
             .frame(width: thumbnailSize, height: thumbnailSize)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.thumb, style: .continuous))
             .overlay(alignment: .bottomLeading) {
@@ -117,7 +121,7 @@ struct ThumbnailRow<Thumbnail: View, Trailing: View>: View {
 
 extension ThumbnailRow where Trailing == EmptyView {
     init(
-        @ViewBuilder thumbnail: () -> Thumbnail,
+        @ViewBuilder thumbnail: @escaping (CGFloat) -> Thumbnail,
         caption: String? = nil,
         captionSymbol: String? = nil,
         title: String,
@@ -141,7 +145,7 @@ private struct ThumbnailRowGallery: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.rowSpacing) {
             ThumbnailRow(
-                thumbnail: { tile("chest", symbol: "dumbbell") },
+                thumbnail: { size in tile("chest", symbol: "dumbbell", size: size) },
                 caption: "Push A · Week 3",
                 captionSymbol: "calendar",
                 title: "Barbell Bench Press",
@@ -153,7 +157,9 @@ private struct ThumbnailRowGallery: View {
                         .foregroundStyle(Theme.Colors.success)
                 })
             ThumbnailRow(
-                thumbnail: { tile("back", symbol: "figure.strengthtraining.traditional") },
+                thumbnail: { size in
+                    tile("back", symbol: "figure.strengthtraining.traditional", size: size)
+                },
                 caption: "Yesterday",
                 title: "Pull B",
                 meta: [("flame", "7 exercises")],
@@ -164,11 +170,11 @@ private struct ThumbnailRowGallery: View {
         .background(Theme.Colors.canvas)
     }
 
-    private func tile(_ muscleGroup: String, symbol: String) -> some View {
+    private func tile(_ muscleGroup: String, symbol: String, size: CGFloat) -> some View {
         Theme.soft(for: muscleGroup)
             .overlay {
                 Image(systemName: symbol)
-                    .font(.system(size: 28, weight: .regular))
+                    .font(.system(size: max(16, size * 0.4), weight: .regular))
                     .foregroundStyle(Theme.accent(for: muscleGroup))
             }
     }

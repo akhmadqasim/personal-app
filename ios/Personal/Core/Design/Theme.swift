@@ -49,8 +49,12 @@ enum Theme {
 
     // MARK: - Typography
 
-    /// SF Pro presets, named as the spec's type table. Sizes are fixed points;
-    /// SwiftUI still scales them with Dynamic Type.
+    /// SF Pro presets, named as the spec's type table.
+    ///
+    /// `Font.system(size:)` is a *scaled* font: it grows and shrinks with the
+    /// user's Dynamic Type setting from the size given here. It carries no
+    /// text style, so none of the per-style caps apply — at the accessibility
+    /// sizes these keep growing, and the layouts have to hold.
     ///
     /// Named `Typography` rather than `Type`: Swift rejects a nested type named
     /// `Type` ("type member must not be named 'Type', since it would conflict
@@ -105,6 +109,7 @@ enum Theme {
         /// draw them with `Capsule()` rather than a number — this constant
         /// exists only for the rare shape that has to be built from a radius,
         /// and must then be clamped (`min(pill, height / 2)`).
+        /// Defined by the design system; no screen uses it yet.
         static let pill: CGFloat = .infinity
     }
 
@@ -112,6 +117,9 @@ enum Theme {
 
     /// Cards carry no shadow in light mode; only floating chrome does, and
     /// only as the fallback for Liquid Glass (spec §2: 0 0 24 pt, 8 % black).
+    ///
+    /// Defined by the design system; no screen uses it yet — the tab bar and
+    /// the sheets all take the system's Liquid Glass material.
     enum Elevation {
         static let floatingColor = Color.black.opacity(0.08)
         static let floatingRadius: CGFloat = 24
@@ -193,6 +201,8 @@ fileprivate extension Color {
 extension View {
     /// The fallback shadow for floating chrome where Liquid Glass is not used
     /// (spec §2: x 0, y 0, blur 24 pt, 8 % black). Cards never call it.
+    ///
+    /// Defined by the design system; no screen uses it yet.
     func floatingShadow() -> some View {
         shadow(
             color: Theme.Elevation.floatingColor,

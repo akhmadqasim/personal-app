@@ -106,7 +106,17 @@ final class SessionViewModel {
 
     /// Reads the session row and its sets. Safe to call repeatedly.
     func loadSession() {
-        guard let found = try? repository.session(id: sessionId) else {
+        let row: WorkoutSession?
+        do {
+            row = try repository.session(id: sessionId)
+        } catch {
+            // The read itself failed. That says nothing about whether the
+            // session still exists, so the screen stays put and says so —
+            // popping here would throw away a session over a transient error.
+            toast = .error("Could not read the local database.")
+            return
+        }
+        guard let found = row else {
             // Deleted on another device, or discarded here: nothing to show.
             isGone = true
             return

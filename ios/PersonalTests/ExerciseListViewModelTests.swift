@@ -116,6 +116,48 @@ struct ExerciseListViewModelTests {
         #expect(searched == "back|lat")
     }
 
+    // MARK: - Empty states
+
+    @Test func aCatalogThatNeverSyncedAsksForASync() throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GymRepository(dbWriter: database, clock: FixedClock(catalogBase))
+        let model = ExerciseListViewModel(repository: repository)
+
+        model.reload()
+
+        #expect(model.rows.isEmpty)
+        #expect(model.emptyState == ExerciseListEmptyState.needsSync)
+    }
+
+    @Test func aSearchThatMatchesNothingIsNotAMissingCatalog() throws {
+        let repository = try makeCatalogFixture()
+        let model = ExerciseListViewModel(repository: repository)
+
+        model.search = "deadlift"
+        model.reload()
+
+        #expect(model.emptyState == ExerciseListEmptyState.noMatches)
+    }
+
+    @Test func aChipThatMatchesNothingIsNotAMissingCatalogEither() throws {
+        let repository = try makeCatalogFixture()
+        let model = ExerciseListViewModel(repository: repository)
+
+        model.select(.calves)
+
+        #expect(model.rows.isEmpty)
+        #expect(model.emptyState == ExerciseListEmptyState.noMatches)
+    }
+
+    @Test func aCatalogWithRowsHasNoEmptyState() throws {
+        let repository = try makeCatalogFixture()
+        let model = ExerciseListViewModel(repository: repository)
+
+        model.reload()
+
+        #expect(model.emptyState == nil)
+    }
+
     // MARK: - The editor behind the "+"
 
     @Test func theEditorWritesANewExerciseAndTheListPicksItUp() throws {
