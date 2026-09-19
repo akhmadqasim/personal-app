@@ -3,7 +3,7 @@
 Rust API on Cloudflare Workers (D1 + R2) for the personal-app gym tracker. It syncs
 gym data (exercises, programs, workout sessions/sets) to the iOS app with an
 offline-first, last-write-wins protocol, and serves a few extra REST endpoints
-(CSV export, exercise images).
+(JSON export, exercise images).
 
 ## Commands (run in `api/`)
 - `npx wrangler dev --var API_TOKEN:dev` — local server with emulated D1/R2

@@ -114,8 +114,13 @@ async fn missing_or_bad_key_is_404(c: Client) {
         .get("/api/gym/images/exercises/nope/1-00000001.jpg", Some(TOKEN))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    // The slashes stay percent-encoded through reqwest's URL normalisation, so the server
+    // really does see `..` in the key instead of a path the client already collapsed.
     let (status, _) = c
-        .get("/api/gym/images/exercises/../wrangler.toml", Some(TOKEN))
+        .get(
+            "/api/gym/images/exercises/a/..%2F..%2Fwrangler.toml",
+            Some(TOKEN),
+        )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }

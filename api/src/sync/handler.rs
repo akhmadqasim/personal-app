@@ -145,19 +145,29 @@ async fn read_last_seq(db: &D1Database) -> ApiResult<i64> {
         .ok_or_else(|| ApiError::Internal("sync_meta.last_seq is missing".into()))
 }
 
-/// D1 reports constraint failures as plain text; map the two we expect.
+/// D1 reports constraint failures as plain text; classify what the batch can hit.
 fn map_batch_error(err: &worker::Error) -> ApiError {
-    let text = err.to_string();
-    if text.contains("UNIQUE constraint failed") {
+    classify_batch_error(&err.to_string())
+}
+
+/// Maps D1's error text to an [`ApiError`]. Matches both the human-readable prefix and the
+/// extended SQLite code, so a wording change on either half still classifies correctly.
+fn classify_batch_error(text: &str) -> ApiError {
+    if text.contains("UNIQUE constraint failed")
+        || text.contains("SQLITE_CONSTRAINT_PRIMARYKEY")
+        || text.contains("SQLITE_CONSTRAINT_UNIQUE")
+    {
         ApiError::Conflict("another sync is in progress; retry".into())
-    } else if text.contains("FOREIGN KEY constraint failed") {
+    } else if text.contains("FOREIGN KEY constraint failed")
+        || text.contains("SQLITE_CONSTRAINT_FOREIGNKEY")
+    {
         ApiError::Validation(vec![FieldError {
             table: String::new(),
             id: String::new(),
             message: "a referenced row does not exist".into(),
         }])
     } else {
-        ApiError::Internal(text)
+        ApiError::Internal(text.to_owned())
     }
 }
 
@@ -167,6 +177,9 @@ async fn pull(
     since_seq: i64,
     last_seq: i64,
 ) -> ApiResult<SyncResponse> {
+    // a cursor beyond the server's last_seq (e.g. after a restore) must self-heal instead of
+    // starving forever
+    let since_seq = since_seq.min(last_seq);
     let params = [Value::from(since_seq), Value::from(PULL_QUERY_LIMIT)];
     let mut all: Vec<(&'static str, Row)> = Vec::new();
     for table in tables {
@@ -197,4 +210,69 @@ async fn pull(
 
 fn row_seq(row: &Row) -> i64 {
     row.get("seq").and_then(Value::as_i64).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_batch_error, map_batch_error};
+    use crate::error::ApiError;
+
+    /// The literal strings D1 returns today; the mapping must not regress silently.
+    #[test]
+    fn classifies_the_constraint_errors_d1_returns() {
+        assert_eq!(
+            classify_batch_error(concat!(
+                "UNIQUE constraint failed: sync_meta.key: SQLITE_CONSTRAINT ",
+                "(extended: SQLITE_CONSTRAINT_PRIMARYKEY)"
+            )),
+            ApiError::Conflict("another sync is in progress; retry".into())
+        );
+        assert_eq!(
+            classify_batch_error(concat!(
+                "UNIQUE constraint failed: exercise.seq: SQLITE_CONSTRAINT ",
+                "(extended: SQLITE_CONSTRAINT_UNIQUE)"
+            )),
+            ApiError::Conflict("another sync is in progress; retry".into())
+        );
+        assert_eq!(
+            classify_batch_error(concat!(
+                "FOREIGN KEY constraint failed: SQLITE_CONSTRAINT ",
+                "(extended: SQLITE_CONSTRAINT_FOREIGNKEY)"
+            ))
+            .status(),
+            422
+        );
+    }
+
+    /// Only the extended code, in case D1 ever drops the English prefix.
+    #[test]
+    fn classifies_bare_extended_codes() {
+        assert_eq!(
+            classify_batch_error("SQLITE_CONSTRAINT_PRIMARYKEY").status(),
+            409
+        );
+        assert_eq!(
+            classify_batch_error("SQLITE_CONSTRAINT_UNIQUE").status(),
+            409
+        );
+        assert_eq!(
+            classify_batch_error("SQLITE_CONSTRAINT_FOREIGNKEY").status(),
+            422
+        );
+    }
+
+    #[test]
+    fn unknown_text_is_internal() {
+        assert_eq!(
+            classify_batch_error("disk I/O error"),
+            ApiError::Internal("disk I/O error".into())
+        );
+    }
+
+    /// `map_batch_error` must forward the worker error's text to the classifier.
+    #[test]
+    fn map_batch_error_uses_the_error_text() {
+        let err = worker::Error::RustError("FOREIGN KEY constraint failed".into());
+        assert_eq!(map_batch_error(&err).status(), 422);
+    }
 }

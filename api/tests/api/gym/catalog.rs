@@ -37,9 +37,16 @@ async fn first_pull_contains_builtin(c: Client) {
         "expected the full catalog, got {}",
         builtin.len()
     );
-    assert!(builtin.iter().all(|r| r["updated_at"] == 0));
+    // `user_edit_of_builtin_wins` bumps LAT_PULLDOWN's `updated_at`, and trials may run in
+    // any order, so that one row is exempt from the seed-timestamp rule.
+    assert!(
+        builtin
+            .iter()
+            .all(|r| r["id"] == LAT_PULLDOWN || r["updated_at"] == 0),
+        "seed rows must keep updated_at = 0 so user edits win"
+    );
+    // Only the columns no trial edits: the name and notes belong to the edit trial.
     let lat = find_row(&all, "exercise", LAT_PULLDOWN).expect("Lat Pulldown seeded");
-    assert_eq!(lat["name"], "Lat Pulldown");
     assert_eq!(lat["muscle_group"], "back");
     assert_eq!(lat["equipment"], "cable");
     assert_eq!(lat["image_key"], "builtin/lat-pulldown");

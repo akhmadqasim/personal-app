@@ -1,6 +1,4 @@
 //! Builders for valid rows; tests override fields as needed.
-// The `program*` builders are consumed by the program tests (Tasks 8-9).
-#![allow(dead_code)]
 
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};

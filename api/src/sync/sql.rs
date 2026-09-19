@@ -10,8 +10,12 @@ pub const READ_LAST_SEQ: &str = "SELECT value FROM sync_meta WHERE key = 'last_s
 /// Advances the cursor only if nobody else did meanwhile (`?1` new, `?2` expected old).
 pub const WRITE_LAST_SEQ: &str =
     "UPDATE sync_meta SET value = ?1 WHERE key = 'last_seq' AND value = ?2";
-/// Fails the batch (duplicate primary key) when the CAS in [`WRITE_LAST_SEQ`] did not apply,
-/// so a concurrent sync rolls back instead of silently reusing seq numbers.
+/// `?1` is the `last_seq` the handler read before building the batch. Runs as the batch's
+/// FIRST statement: if the cursor moved underneath us, the `INSERT` collides with the
+/// `sync_meta.key` primary key, the whole batch rolls back, and the caller maps it to 409.
+/// [`WRITE_LAST_SEQ`] keeps its own CAS as a second belt.
+///
+/// The guard relies on `sync_meta.key` being the PRIMARY KEY (migration 0001).
 pub const GUARD_LAST_SEQ: &str = "INSERT INTO sync_meta (key, value) SELECT 'last_seq', 0 \
      WHERE (SELECT value FROM sync_meta WHERE key = 'last_seq') != ?1";
 
@@ -91,6 +95,27 @@ mod tests {
         columns: &COLS,
         validate: |_| Vec::new(),
     };
+
+    /// The three cursor statements are pinned verbatim: the guard, the CAS and the read
+    /// must keep agreeing on `sync_meta`'s shape, so a silent edit has to break a test.
+    #[test]
+    fn cursor_statements_are_pinned() {
+        assert_eq!(
+            READ_LAST_SEQ,
+            "SELECT value FROM sync_meta WHERE key = 'last_seq'"
+        );
+        assert_eq!(
+            WRITE_LAST_SEQ,
+            "UPDATE sync_meta SET value = ?1 WHERE key = 'last_seq' AND value = ?2"
+        );
+        assert_eq!(
+            GUARD_LAST_SEQ,
+            concat!(
+                "INSERT INTO sync_meta (key, value) SELECT 'last_seq', 0 ",
+                "WHERE (SELECT value FROM sync_meta WHERE key = 'last_seq') != ?1"
+            )
+        );
+    }
 
     #[test]
     fn upsert_sql_is_last_write_wins() {

@@ -7,7 +7,9 @@ use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::client::{Client, Ctx, TOKEN, find_row};
-use crate::fixtures::{exercise, now_ms, program, uuid, workout_session, workout_set};
+use crate::fixtures::{
+    exercise, now_ms, program, program_day, program_exercise, uuid, workout_session, workout_set,
+};
 
 /// Adds this module's trials to the run.
 pub fn register(trials: &mut Vec<Trial>, ctx: &Ctx) {
@@ -54,6 +56,11 @@ pub fn register(trials: &mut Vec<Trial>, ctx: &Ctx) {
         non_200_page_is_returned_by_sync_all,
     ));
     trials.push(ctx.trial("sync::paginates_with_has_more", paginates_with_has_more));
+    trials.push(ctx.trial(
+        "sync::cursor_beyond_last_seq_self_heals",
+        cursor_beyond_last_seq_self_heals,
+    ));
+    trials.push(ctx.trial("sync::program_chain_round_trips", program_chain_round_trips));
 }
 
 async fn push_then_pull_returns_row(c: Client) {
@@ -316,4 +323,59 @@ async fn paginates_with_has_more(c: Client) {
     for id in &ids {
         assert!(got.iter().any(|r| r["id"] == *id), "missing {id}");
     }
+}
+
+/// A cursor past the server's `last_seq` (a restored or corrupted client) must snap back to
+/// the server cursor instead of pulling nothing forever.
+///
+/// The probe is `Number.MAX_SAFE_INTEGER`, not `i64::MAX / 2`: the Worker parses the body
+/// with JS `JSON.parse`, so any cursor above 2^53-1 loses precision and is rejected as 400
+/// before it ever reaches the clamp.
+async fn cursor_beyond_last_seq_self_heals(c: Client) {
+    let far = 9_007_199_254_740_991i64;
+    let (status, body) = c.sync(far, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let healed = body["seq"].as_i64().unwrap();
+    assert_ne!(healed, far, "the impossible cursor must not be echoed back");
+    let (status, caught_up) = c.sync_all(0, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{caught_up}");
+    let server = caught_up["seq"].as_i64().unwrap();
+    assert!(
+        healed <= server,
+        "healed cursor {healed} must not run ahead of the server cursor {server}"
+    );
+}
+
+/// A whole program tree in one push: the server orders the batch by FK dependency, so the
+/// client may send the tables in any order. A dangling parent is a 422 instead.
+async fn program_chain_round_trips(c: Client) {
+    let (prog, day, ex, link) = (uuid(), uuid(), uuid(), uuid());
+    let t = now_ms();
+    let (status, body) = c
+        .sync_all(
+            0,
+            json!({
+                "program_exercise": [program_exercise(&link, &day, &ex, t)],
+                "exercise": [exercise(&ex, "Incline Press", t)],
+                "program_day": [program_day(&day, &prog, "Push", t)],
+                "program": [program(&prog, "PPL", t)]
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for (table, id) in [
+        ("program", &prog),
+        ("program_day", &day),
+        ("exercise", &ex),
+        ("program_exercise", &link),
+    ] {
+        let row =
+            find_row(&body["pull"], table, id).unwrap_or_else(|| panic!("{table} {id} not echoed"));
+        assert!(row["seq"].as_i64().unwrap() > 0, "{table} {id} has no seq");
+    }
+
+    let orphan = program_exercise(&uuid(), &uuid(), &ex, now_ms());
+    let (status, body) = c.sync(0, json!({ "program_exercise": [orphan] })).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
 }

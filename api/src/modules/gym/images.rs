@@ -89,6 +89,9 @@ pub async fn serve(_req: Request, ctx: RouteContext<()>) -> ApiResult<Response> 
     let headers = Headers::new();
     headers.set("Content-Type", &content_type)?;
     headers.set("Cache-Control", CACHE_CONTROL)?;
+    // The content type comes from whatever the uploader declared, so never let a browser
+    // sniff its way to a different one.
+    headers.set("X-Content-Type-Options", "nosniff")?;
     Ok(Response::from_bytes(bytes)?.with_headers(headers))
 }
 
