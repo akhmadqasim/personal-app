@@ -55,9 +55,10 @@ jobs:
           tail -50 wrangler-smoke.log
       - name: Run integration tests
         timeout-minutes: 22
-        run: |
-          set -o pipefail
-          timeout 20m cargo test --test api -- --nocapture 2>&1 | tee api-test.log | tail -200
+        # No pipeline: `tee`/`tail` keep the step's stdout pipe open for as long as any
+        # grandchild holds it, which made a leaked `wrangler dev` unkillable. The log is
+        # printed by the next step instead.
+        run: timeout 20m cargo test --test api -- --nocapture > api-test.log 2>&1
       - name: Tail integration test log
         if: always()
         run: tail -300 api-test.log
@@ -69,3 +70,4 @@ jobs:
           path: |
             api/api-test.log
             api/wrangler-smoke.log
+            api/.wrangler/test-state/wrangler-dev.log
