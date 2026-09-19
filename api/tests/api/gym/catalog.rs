@@ -8,6 +8,7 @@ use crate::fixtures::now_ms;
 
 const LAT_PULLDOWN: &str = "64957399-5838-4e90-8d8c-be7c00552f33";
 
+/// Adds this module's trials to the run.
 pub fn register(trials: &mut Vec<Trial>, ctx: &Ctx) {
     trials.push(ctx.trial(
         "gym::catalog::first_pull_contains_builtin_exercises",
@@ -46,7 +47,7 @@ async fn first_pull_contains_builtin(c: Client) {
 
 async fn user_edit_of_builtin_wins(c: Client) {
     let (_, body) = c
-        .sync(
+        .sync_all(
             0,
             json!({ "exercise": [{
                 "id": LAT_PULLDOWN, "updated_at": now_ms(), "deleted_at": null,

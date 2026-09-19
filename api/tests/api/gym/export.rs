@@ -7,6 +7,7 @@ use serde_json::json;
 use crate::client::{Client, Ctx, TOKEN};
 use crate::fixtures::{exercise, now_ms, uuid};
 
+/// Adds this module's trials to the run.
 pub fn register(trials: &mut Vec<Trial>, ctx: &Ctx) {
     trials.push(ctx.trial(
         "gym::export::returns_active_rows_only",
