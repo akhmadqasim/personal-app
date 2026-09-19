@@ -100,6 +100,8 @@ struct MigrationsTests {
 
         let stored = try repository.exercises()
         #expect(stored.count == 2)
-        #expect(stored.allSatisfy({ $0.seq == nil }))
+        for exercise in stored {
+            #expect(exercise.seq == nil)
+        }
     }
 }

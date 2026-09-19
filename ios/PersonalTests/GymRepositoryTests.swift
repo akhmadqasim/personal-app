@@ -192,7 +192,13 @@ struct GymRepositoryTests {
         #expect(session.dirty == true)
         #expect(sets.count == 3)
         #expect(sets.map(\.position) == [0, 1, 2])
-        #expect(sets.allSatisfy({ $0.weightKg == 50 && $0.reps == 8 && $0.completed == false }))
+        // One expectation per field: a closure with several comparisons inside
+        // `#expect` expands into an expression the type checker gives up on.
+        for set in sets {
+            #expect(set.weightKg == 50)
+            #expect(set.reps == 8)
+            #expect(set.completed == false)
+        }
     }
 
     @Test func startSessionPrefillsFromTheLastCompletedSet() throws {
@@ -214,7 +220,10 @@ struct GymRepositoryTests {
         let sets = try repository.sets(of: second.id)
 
         #expect(sets.count == 3)
-        #expect(sets.allSatisfy({ $0.weightKg == 57.5 && $0.reps == 6 }))
+        for set in sets {
+            #expect(set.weightKg == 57.5)
+            #expect(set.reps == 6)
+        }
     }
 
     @Test func startSessionWithoutADayCreatesAFreeSession() throws {
@@ -336,8 +345,10 @@ struct GymRepositoryTests {
 
         let all = try repository.programs()
         #expect(all.count == 2)
-        #expect(all.filter(\.isActive).count == 1)
-        #expect(all.first(where: { $0.id == first.id })?.isActive == false)
+        let activeCount = all.filter(\.isActive).count
+        #expect(activeCount == 1)
+        let previous = all.first(where: { $0.id == first.id })
+        #expect(previous?.isActive == false)
     }
 
     // MARK: - Catalog filters
