@@ -57,8 +57,11 @@ nonisolated enum ApiError: Error, Equatable, Sendable {
             return "Too much data to send at once"
         case .unsupportedMediaType:
             return "That image format is not supported"
-        case .validation:
-            return "The server rejected some changes"
+        case .validation(let errors):
+            // Spec §5: show the first message. It is the server's own English
+            // sentence ("reps must be >= 1"), which is more use than a generic
+            // line for a failure the UI is supposed to make impossible.
+            return errors.first?.message ?? "The server rejected some changes"
         case .server:
             return "Something went wrong on the server"
         case .network:

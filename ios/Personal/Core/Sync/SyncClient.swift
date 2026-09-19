@@ -94,10 +94,10 @@ nonisolated enum JSONValue: Codable, Equatable, Sendable {
 
 /// `POST /api/sync` request body (`gym-tracker.md` §5).
 ///
-/// `push` is encoded in foreign-key order rather than in dictionary order, so
-/// the bytes on the wire are deterministic and a parent table always precedes
-/// its children — the server reads the batch in its own order, but a
-/// reproducible body makes the request easy to assert on and to read in a log.
+/// `push` is encoded in foreign-key order rather than in dictionary order.
+/// That order is not load-bearing — the server sorts the batch by its own table
+/// list before writing it — it only makes the body reproducible, which is worth
+/// the few lines when reading a log or asserting on a request.
 nonisolated struct SyncRequest: Encodable, Sendable {
     /// Cursor from the previous response; 0 on the first sync.
     var sinceSeq: Int64

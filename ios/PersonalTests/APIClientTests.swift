@@ -263,6 +263,8 @@ struct APIClientTests {
         } catch let error as ApiError {
             let field = FieldError(table: "workout_set", id: "s1", message: "reps must be >= 1")
             #expect(error == ApiError.validation([field]))
+            // Spec §5: the toast shows the first message, not a generic line.
+            #expect(error.message == "reps must be >= 1")
         }
     }
 

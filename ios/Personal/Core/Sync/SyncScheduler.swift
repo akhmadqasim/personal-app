@@ -36,6 +36,18 @@ final class SyncScheduler {
         self.engine = engine
         self.status = status
         self.debounce = debounce
+        Task { [weak self] in
+            await self?.restoreLastSyncedAt()
+        }
+    }
+
+    /// Shows the stored sync time right after a relaunch, before the first run
+    /// of this session has had a chance to finish.
+    func restoreLastSyncedAt() async {
+        guard status.lastSyncedAt == nil else { return }
+        guard let milliseconds = try? await engine.lastSyncedAt() else { return }
+        guard status.lastSyncedAt == nil else { return }
+        status.lastSyncedAt = Date(timeIntervalSince1970: Double(milliseconds) / 1000)
     }
 
     /// Asks for a sync. `.afterWrite` waits out the debounce window and is
