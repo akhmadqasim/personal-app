@@ -5,7 +5,7 @@ Single user, static bearer token. Modules live in `api/src/modules/`; the sync e
 replicates each module's tables to the iOS app (offline-first, last-write-wins + `seq`).
 
 ## Commands (run in `api/`)
-- `npx wrangler dev --var API_TOKEN:dev` — local server with emulated D1/R2
+- `bunx wrangler dev --var API_TOKEN:dev` — local server with emulated D1/R2
 - `cargo test --lib` — unit tests (pure logic, no Cloudflare)
 - `cargo test --test api` — integration tests (starts `wrangler dev` itself)
 - `cargo fmt --all && cargo clippy --all-targets -- -D warnings` — must pass before commit

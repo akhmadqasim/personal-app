@@ -36,8 +36,9 @@ impl DevServer {
         let log_for_stderr = log.try_clone().expect("clone wrangler dev log handle");
 
         let port = free_port();
-        let mut cmd = Command::new(npx());
+        let mut cmd = Command::new("bun");
         cmd.args([
+            "x",
             "wrangler",
             "dev",
             "--port",
@@ -142,8 +143,9 @@ pub fn print_log_tail(lines: usize) {
 }
 
 fn apply_migrations(root: &Path, state: &Path) {
-    let status = Command::new(npx())
+    let status = Command::new("bun")
         .args([
+            "x",
             "wrangler",
             "d1",
             "migrations",
@@ -160,10 +162,6 @@ fn apply_migrations(root: &Path, state: &Path) {
     assert!(status.success(), "migrations failed");
 }
 
-fn npx() -> &'static str {
-    if cfg!(windows) { "npx.cmd" } else { "npx" }
-}
-
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .expect("bind")
@@ -173,7 +171,7 @@ fn free_port() -> u16 {
 }
 
 /// Gives the dev server its own process group so `kill_group` can take down the
-/// `node`/`esbuild`/`workerd` children `npx` spawns. Windows needs nothing here:
+/// `node`/`esbuild`/`workerd` children `bun x` spawns. Windows needs nothing here:
 /// `taskkill /T` walks the tree by pid instead.
 #[cfg(unix)]
 fn configure_process_group(cmd: &mut Command) {
@@ -194,7 +192,7 @@ fn kill_group(pid: u32) {
         .status();
 }
 
-/// Kills the whole process group, not just `npx`.
+/// Kills the whole process group, not just `bun x`.
 ///
 /// The `--` is load-bearing. procps-ng `kill` (Ubuntu, and therefore every GitHub
 /// runner) parses a leading `-<pgid>` as an option, silently does nothing and still

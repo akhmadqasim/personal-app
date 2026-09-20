@@ -6,7 +6,7 @@ description: Add a new module to api/ (tables synced to the iOS app and/or REST 
 # Add a module to `api/`
 
 1. **Spec first**: write `docs/specs/<module>.md` (tables with base columns, enums, endpoints, out of scope). Get approval.
-2. **Migration**: `npx wrangler d1 migrations create DB <module>` → tables with `id, updated_at, deleted_at, seq INTEGER NOT NULL UNIQUE` first; FK order matters. Seeds use `updated_at = 0` and allocate `seq` from `sync_meta.last_seq` (see `migrations/0002_gym_seed.sql`).
+2. **Migration**: `bunx wrangler d1 migrations create DB <module>` → tables with `id, updated_at, deleted_at, seq INTEGER NOT NULL UNIQUE` first; FK order matters. Seeds use `updated_at = 0` and allocate `seq` from `sync_meta.last_seq` (see `migrations/0002_gym_seed.sql`).
 3. **Code** in `src/modules/<module>/`:
    - `tables.rs` — `pub static TABLES: [SyncTable; N]`, parents before children.
    - `validate.rs` — one `fn(&Row) -> Vec<String>` per table (types are already checked).

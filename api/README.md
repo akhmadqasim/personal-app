@@ -6,7 +6,7 @@ offline-first, last-write-wins protocol, and serves a few extra REST endpoints
 (JSON export, exercise images).
 
 ## Commands (run in `api/`)
-- `npx wrangler dev --var API_TOKEN:dev` — local server with emulated D1/R2
+- `bunx wrangler dev --var API_TOKEN:dev` — local server with emulated D1/R2
 - `cargo test --lib` — unit tests (pure logic, no Cloudflare)
 - `cargo test --test api` — integration tests (starts `wrangler dev` itself)
 - `cargo fmt --all && cargo clippy --all-targets -- -D warnings` — must pass before commit
@@ -15,13 +15,13 @@ offline-first, last-write-wins protocol, and serves a few extra REST endpoints
 ## First deploy (one-time, on your machine)
 
 ```bash
-npx wrangler login                                   # browser OAuth once
-npx wrangler d1 create personal-api                  # copy database_id into wrangler.toml
-npx wrangler r2 bucket create personal-api-images
-npx wrangler d1 migrations apply DB --remote
+bunx wrangler login                                   # browser OAuth once
+bunx wrangler d1 create personal-api                  # copy database_id into wrangler.toml
+bunx wrangler r2 bucket create personal-api-images
+bunx wrangler d1 migrations apply DB --remote
 openssl rand -base64 32                              # this is API_TOKEN; keep it for the iOS app
-npx wrangler secret put API_TOKEN                    # paste the token
-npx wrangler deploy                                  # first deploy also attaches api.akhmadqasim.com
+bunx wrangler secret put API_TOKEN                    # paste the token
+bunx wrangler deploy                                  # first deploy also attaches api.akhmadqasim.com
 curl https://api.akhmadqasim.com/api/health          # {"ok":true}
 ```
 

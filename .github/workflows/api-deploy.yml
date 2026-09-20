@@ -34,9 +34,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: api/package-lock.json
-      - run: npm ci
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
       - run: cargo install worker-build --locked
-      - run: npx wrangler d1 migrations apply DB --remote
-      - run: npx wrangler deploy
+      - run: bunx wrangler d1 migrations apply DB --remote
+      - run: bunx wrangler deploy
